@@ -1,5 +1,7 @@
 # Bert - Build, Execute, and Refine Tasks
 
+## version 0.0.1
+
 Task management for Claude Code with optional spec-driven development.
 
 ## Quick Start
@@ -26,9 +28,21 @@ Task management for Claude Code with optional spec-driven development.
 
 ## Installation
 
+### Quick Install
+
+Run this one-line command from your target repository:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ssr1ram/bert-sidecar/main/scripts/base-install.sh | bash
+```
+
+This will download and install all Bert files to your `.claude/` directory.
+
+### Manual Installation
+
 Copy these files to your Claude Code project:
 
-### File Locations
+#### File Locations
 
 ```
 your-project/
@@ -46,7 +60,7 @@ your-project/
 │       └── skill.yml        # Configuration
 ```
 
-### Directories (auto-created)
+#### Directories (auto-created)
 
 ```
 your-project/
@@ -58,7 +72,7 @@ your-project/
     └── archive/            # Archives (auto-created)
 ```
 
-### Configuration
+#### Configuration
 
 Edit `.claude/skills/bert/skill.yml` if needed:
 
