@@ -1,0 +1,34 @@
+# Agent-OS Skill
+# Spec-driven development with multi-agent orchestration
+
+name: agent-os
+version: 2.0.3
+description: Multi-agent specification and implementation system for structured product development
+
+# Configuration
+config:
+  # Directory for active specs and implementation work
+  specs_directory: agent-os/specs
+
+  # Directory for product documentation
+  product_directory: agent-os/product
+
+  # Directory for coding standards
+  standards_directory: agent-os/standards
+
+  # Agent definitions location
+  agents_directory: .claude/skills/agent-os/agents
+
+  # Roles configuration
+  roles_directory: agent-os/roles
+
+  # Multi-agent mode
+  multi_agent_mode: true
+  multi_agent_tool: claude-code
+
+# Available operations
+operations:
+  - new-spec: Initialize a new spec with requirements gathering
+  - create-spec: Generate comprehensive specification and task breakdown from requirements
+  - implement-spec: Multi-phase implementation with delegated agents and verification
+  - plan-product: Create product mission, roadmap, and tech stack documentation

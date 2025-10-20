@@ -1,0 +1,35 @@
+# Bert Task Management Skill
+# Build, Execute, and Refine Tasks
+
+name: bert
+version: 1.0.0
+description: Task management system for creating, organizing, and tracking hierarchical tasks with arbitrary nesting depth
+
+# Configuration
+config:
+  # Task directories
+  tasks_directory: docs/bert/tasks
+  notes_directory: docs/bert/notes
+  archive_tasks_directory: docs/bert/archive/tasks
+  archive_notes_directory: docs/bert/archive/notes
+
+  # Spec directories (NEW)
+  specs_directory: docs/bert/specs
+
+  # Product context (optional)
+  product_directory: docs/bert/product
+
+# Available operations
+operations:
+  # Task operations (standard Bert)
+  - task-author: Generate parent task from file analysis or improvement request
+  - task-create: Create subtasks with nested numbering support
+  - list-tasks: List all tasks and their status
+  - update-status: Update task status
+  - archive-task: Archive a task and its associated notes by task number
+
+  # Spec operations (NEW - invoked via /spec command)
+  - spec-new: Create new spec with requirements gathering
+  - spec-write: Generate specification from requirements
+  - spec-tasks: Propose task breakdown from spec
+  - spec-approve: Finalize spec and create task files
