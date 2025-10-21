@@ -13,8 +13,9 @@ config:
   archive_tasks_directory: docs/bert/archive/tasks
   archive_notes_directory: docs/bert/archive/notes
 
-  # Spec directories (NEW)
+  # Spec directories
   specs_directory: docs/bert/specs
+  archive_specs_directory: docs/bert/archive/specs
 
   # Product context (optional)
   product_directory: docs/bert/product

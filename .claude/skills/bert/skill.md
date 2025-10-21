@@ -803,6 +803,264 @@ When user requests archiving (e.g., "archive task 3"):
 - Task `3.1` → Match: `task-03.1-*.md`, `task-03.1.1-*.md`, `task-03.1.2-*.md` (NOT `task-03-*.md` or `task-03.2-*.md`)
 - Task `3.1.2` → Match: `task-03.1.2-*.md`, `task-03.1.2.1-*.md` (NOT `task-03.1-*.md` or `task-03.1.1-*.md`)
 
+### 6. Archive Spec (`archive-spec`)
+
+Archive a spec directory along with all its tasks and review files.
+
+**Usage Patterns**:
+- "archive spec 12" → Archive spec-12 directory and all task-12.x files
+- "archive spec 12 --tasks-only" → Archive only tasks, keep spec
+
+#### Bash Implementation
+
+```bash
+#!/bin/bash
+# archive-spec.sh - Archive a spec and optionally its tasks
+# Usage: bash archive-spec.sh <config_file> <spec_number> [--tasks-only]
+# Example: bash archive-spec.sh .claude/skills/bert/skill.yml 12
+# Example: bash archive-spec.sh .claude/skills/bert/skill.yml 12 --tasks-only
+
+set -e
+
+CONFIG_FILE="$1"
+SPEC_NUM="$2"
+TASKS_ONLY=false
+
+if [[ "$3" == "--tasks-only" ]]; then
+    TASKS_ONLY=true
+fi
+
+if [[ -z "$CONFIG_FILE" ]] || [[ -z "$SPEC_NUM" ]]; then
+    echo '{"error": "Usage: archive-spec.sh <config_file> <spec_number> [--tasks-only]"}' >&2
+    exit 1
+fi
+
+# Read config
+SPECS_DIR=$(grep "specs_directory:" "$CONFIG_FILE" | awk '{print $2}')
+TASKS_DIR=$(grep "tasks_directory:" "$CONFIG_FILE" | grep -v "archive" | awk '{print $2}')
+NOTES_DIR=$(grep "notes_directory:" "$CONFIG_FILE" | grep -v "archive" | awk '{print $2}')
+ARCHIVE_SPECS=$(grep "archive_specs_directory:" "$CONFIG_FILE" | awk '{print $2}')
+ARCHIVE_TASKS=$(grep "archive_tasks_directory:" "$CONFIG_FILE" | awk '{print $2}')
+ARCHIVE_NOTES=$(grep "archive_notes_directory:" "$CONFIG_FILE" | awk '{print $2}')
+
+# Create archive directories
+mkdir -p "$ARCHIVE_SPECS" "$ARCHIVE_TASKS" "$ARCHIVE_NOTES"
+
+# Pad spec number to 2 digits
+PADDED_NUM=$(printf "%02d" "$SPEC_NUM")
+
+# Archive spec directory (unless --tasks-only)
+SPEC_DIR="${SPECS_DIR}/spec-${PADDED_NUM}"
+ARCHIVED_SPEC=false
+
+if [[ "$TASKS_ONLY" == false ]]; then
+    if [[ -d "$SPEC_DIR" ]]; then
+        mv "$SPEC_DIR" "$ARCHIVE_SPECS/"
+        ARCHIVED_SPEC=true
+    else
+        echo "{\"error\": \"Spec directory not found: $SPEC_DIR\"}" >&2
+        exit 1
+    fi
+fi
+
+# Archive all tasks for this spec (task-{PADDED_NUM}.*.md)
+TASK_FILES=()
+
+# Find parent task file (might not exist for spec-based tasks)
+while IFS= read -r -d '' file; do
+    TASK_FILES+=("$file")
+done < <(find "$TASKS_DIR" -maxdepth 1 -name "task-${PADDED_NUM}-*.md" -print0 2>/dev/null)
+
+# Find all subtasks (task-{PADDED_NUM}.*.md)
+while IFS= read -r -d '' file; do
+    TASK_FILES+=("$file")
+done < <(find "$TASKS_DIR" -maxdepth 1 -name "task-${PADDED_NUM}.*.md" -print0 2>/dev/null)
+
+# Move task files
+MOVED_TASKS=()
+for task_file in "${TASK_FILES[@]}"; do
+    filename=$(basename "$task_file")
+    mv "$task_file" "$ARCHIVE_TASKS/"
+    MOVED_TASKS+=("$filename")
+done
+
+# Find and move associated notes
+NOTE_PATTERN="*task-${PADDED_NUM}*.md"
+NOTE_FILES=()
+while IFS= read -r -d '' file; do
+    NOTE_FILES+=("$file")
+done < <(find "$NOTES_DIR" -maxdepth 1 -name "$NOTE_PATTERN" -print0 2>/dev/null)
+
+# Move notes files
+MOVED_NOTES=()
+for note_file in "${NOTE_FILES[@]}"; do
+    filename=$(basename "$note_file")
+    mv "$note_file" "$ARCHIVE_NOTES/"
+    MOVED_NOTES+=("$filename")
+done
+
+# Output JSON result
+echo "{"
+echo "  \"spec_number\": \"$SPEC_NUM\","
+echo "  \"spec_archived\": $ARCHIVED_SPEC,"
+echo "  \"tasks_archived\": ${#MOVED_TASKS[@]},"
+echo "  \"notes_archived\": ${#MOVED_NOTES[@]},"
+if [[ "$ARCHIVED_SPEC" == true ]]; then
+    echo "  \"archived_spec\": \"spec-${PADDED_NUM}\","
+fi
+echo "  \"archived_tasks\": ["
+for i in "${!MOVED_TASKS[@]}"; do
+    echo -n "    \"${MOVED_TASKS[$i]}\""
+    [[ $i -lt $((${#MOVED_TASKS[@]} - 1)) ]] && echo "," || echo
+done
+echo "  ],"
+echo "  \"archived_notes\": ["
+for i in "${!MOVED_NOTES[@]}"; do
+    echo -n "    \"${MOVED_NOTES[$i]}\""
+    [[ $i -lt $((${#MOVED_NOTES[@]} - 1)) ]] && echo "," || echo
+done
+echo "  ],"
+echo "  \"archive_specs_directory\": \"$ARCHIVE_SPECS\","
+echo "  \"archive_tasks_directory\": \"$ARCHIVE_TASKS\","
+echo "  \"archive_notes_directory\": \"$ARCHIVE_NOTES\""
+echo "}"
+```
+
+#### AI Workflow
+
+When user requests spec archiving (e.g., "archive spec 12"):
+
+1. **Parse spec number and options** from user request
+2. **Extract bash script** from the code block above
+3. **Execute script**:
+   ```bash
+   bash -c '<script>' -- .claude/skills/bert/skill.yml <spec_number> [--tasks-only]
+   ```
+4. **Parse JSON output** from script
+5. **Confirm to user**:
+   - "Archived spec X with Y tasks"
+   - List archived files
+   - Display archive directory paths
+6. **Handle errors**: If script returns error, explain to user
+
+**Archive Behavior**:
+
+- `archive spec 12` → Archives spec-12 directory AND all task-12.x files
+- `archive spec 12 --tasks-only` → Archives only task files, keeps spec directory (for living documentation)
+
+## Task Execution and Review Workflow
+
+### After Completing Tasks
+
+When you finish executing a task or set of tasks (e.g., after completing tasks 1.1 through 1.8), you MUST automatically generate a review file:
+
+**Review File Naming Logic**:
+- Tasks `1.1, 1.2, 1.3` → `task-01-review.md` (one review for all `1.x` tasks)
+- Tasks `1.1.1, 1.1.2` → `task-01.1-review.md` (review for all `1.1.x` tasks)
+- Task `2` → `task-02-review.md`
+
+**Review File Structure**:
+
+```markdown
+# Task {NN}: {Title} - Review
+
+**Created**: YYYY-MM-DD
+**Status**: In Review
+
+---
+
+## Implementation Summary
+
+### Completed Tasks
+- [ ] {NN}.1: {Subtask title}
+- [ ] {NN}.2: {Subtask title}
+
+### Files Changed
+- path/to/file1.ts
+- path/to/file2.tsx
+
+### Implementation Notes
+{Summary of what was built, key decisions, patterns used}
+
+---
+
+## Testing Checklist
+
+- [ ] Build succeeds without errors
+- [ ] Code follows project conventions
+- [ ] No console errors or warnings
+- [ ] Tested on desktop browser
+- [ ] Tested on mobile browser
+- [ ] Edge cases handled
+- [ ] Error states implemented
+
+---
+
+## Issues Found
+
+<!-- User adds issues here during testing -->
+
+---
+
+## Final Status
+
+- [ ] Ready for production
+- [ ] Needs iteration
+- [ ] Blocked (explain below)
+
+**Notes**:
+{Any final notes, known limitations, future improvements}
+```
+
+**Your Workflow After Task Completion**:
+
+1. **Create review file** at `docs/bert/tasks/task-{NN}-review.md`
+2. **Fill in Implementation Summary**:
+   - List all completed subtasks with checkboxes
+   - List all files you created or modified
+   - Summarize what was built and key decisions made
+3. **Inform user**:
+   - "Created review file at: docs/bert/tasks/task-{NN}-review.md"
+   - "Please test and add any issues you find to the Issues Found section"
+   - "When done, tell me: 'added notes to task-{NN}-review.md'"
+
+**User's Review Process**:
+
+1. User reads the review file to understand what was done
+2. User tests the implementation
+3. User finds issues and adds them to "Issues Found" section:
+   ```markdown
+   ### Issue 1: Description (YYYY-MM-DD)
+   **Reporter**: User
+   **Status**: Open
+
+   Detailed description of the issue...
+   ```
+4. User tells you: "added notes to task-{NN}-review.md"
+
+**Your Fix Process**:
+
+1. Read the review file
+2. See the issues user added
+3. Fix each issue
+4. Add your fix notes directly below each issue:
+   ```markdown
+   ### Issue 1: Description (YYYY-MM-DD)
+   **Reporter**: User
+   **Status**: Fixed
+
+   Detailed description of the issue...
+
+   **Fix**: {Explain what you changed to fix it}
+   ```
+5. Update issue status from "Open" to "Fixed"
+6. Tell user what you fixed
+
+**Iteration**:
+- Repeat this process until user checks "Ready for production" in Final Status
+- User can add multiple issues at once
+- You fix them and document all fixes in the same review file
+
 ## User Interaction Patterns
 
 When users say:
@@ -814,6 +1072,9 @@ When users say:
 - "mark task 4 as completed" → Use update-status
 - "archive task 3" → Use archive-task with task number 3 (archives parent + all subtasks)
 - "archive task 3.1" → Use archive-task with task number 3.1 (archives only this subtask)
+- "archive spec 12" → Use archive-spec to archive spec-12 directory and all task-12.x files
+- "archive spec 12 tasks only" → Use archive-spec with --tasks-only flag (keeps spec, archives tasks)
+- "added notes to task-{NN}-review.md" → Read review file, fix issues, update with fix notes
 
 ## Key Behaviors
 

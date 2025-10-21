@@ -1,8 +1,8 @@
 # Bert - Build, Execute, and Refine Tasks
 
-## version 0.0.1
+## version 0.1.2
 
-Task management for Claude Code with optional spec-driven development.
+Task management for Claude Code with optional spec-driven development and built-in review workflow.
 
 ## Quick Start
 
@@ -12,17 +12,23 @@ Task management for Claude Code with optional spec-driven development.
 # Basic task workflow
 /bert:task create "add feature"
 /bert:task execute 15
+# → AI creates task-15-review.md
+# → You test, add issues to review file
+# → Tell AI: "added notes to task-15-review.md"
+# → AI fixes issues, documents fixes
 
 # Spec-driven workflow (complex features)
 /bert:spec new "user authentication"
 /bert:spec iterate 12
 /bert:spec tasks 12
 /bert:task execute 12.1
+# → Same review workflow
 ```
 
 ## What is Bert?
 
 - **Task management** - Create, track, archive hierarchical tasks
+- **Review workflow** - AI auto-generates review files, you add issues, AI fixes and documents
 - **Spec development** - Optional requirements + spec writing for complex features
 - **Product context** - Optional mission/roadmap/tech-stack for better AI assistance
 
@@ -103,6 +109,8 @@ config:
 /bert:spec new "description"              # Create requirements.md
 /bert:spec iterate 12                     # Smart iteration
 /bert:spec tasks 12                       # Create task files
+/bert:spec archive 12                     # Archive spec + tasks
+/bert:spec archive 12 --tasks-only        # Archive tasks, keep spec
 ```
 
 **Smart iteration** auto-detects:
@@ -120,11 +128,38 @@ Creates: `mission.md`, `roadmap.md`, `tech-stack.md`
 
 ## Workflows
 
+For a detailed user walkthrough see [docs/walkthrough.md](./docs/walkthrough.md)
+
 ### Ad-hoc Task
 
 ```bash
+# 1. Create and execute
 /bert:task create "fix login bug"
 /bert:task execute 15
+
+# 2. AI auto-generates task-15-review.md
+# - Lists files changed
+# - Documents implementation
+# - Provides testing checklist
+
+# 3. You test and add issues
+# Edit docs/bert/tasks/task-15-review.md:
+### Issue 1: Button not visible (2025-01-21)
+**Reporter**: User
+**Status**: Open
+
+Button doesn't show on mobile...
+
+# 4. Notify AI
+"added notes to task-15-review.md"
+
+# 5. AI fixes and documents
+# - Fixes each issue
+# - Adds **Fix** notes below each issue
+# - Updates status to Fixed
+
+# 6. Iterate until ready
+# Repeat steps 3-5 until you check "Ready for production"
 ```
 
 ### Spec-Driven Feature
@@ -145,8 +180,14 @@ Creates: `mission.md`, `roadmap.md`, `tech-stack.md`
 /bert:spec tasks 12
 # → Creates task-12.1.md, task-12.2.md, etc.
 
-# 4. Execute
+# 4. Execute with review
 /bert:task execute 12.1
+# → AI creates task-12-review.md (covers all 12.x tasks)
+# → Same review workflow as ad-hoc tasks
+
+# 5. Archive when done
+/bert:spec archive 12                # Archive spec + tasks
+/bert:spec archive 12 --tasks-only   # Keep spec as documentation
 ```
 
 ## File Structure
@@ -166,15 +207,23 @@ docs/bert/specs/spec-12/
 docs/bert/tasks/
 ├── task-12.1-database.md      # From spec 12
 ├── task-12.2-api.md           # From spec 12
+├── task-12-review.md          # Review file (auto-generated)
 ├── task-15-bugfix.md          # Ad-hoc
+├── task-15-review.md          # Review file (auto-generated)
 └── task-03.1-subtask.md       # Subtask
 ```
 
-Spec-based tasks use spec number prefix: `spec-12` → `task-12.1`, `12.2`, etc.
+**Review files**:
+- Auto-generated after task execution
+- `task-01-review.md` covers all `01.x` subtasks
+- `task-01.1-review.md` covers all `01.1.x` subtasks
+- Contains: implementation summary, files changed, testing checklist, issues section
 
 ## Features
 
 - **Hierarchical tasks** - Unlimited nesting (3.1.2.4)
+- **Auto-review generation** - AI creates review files after task completion
+- **Async issue tracking** - Add issues to review file anytime, AI fixes and documents
 - **No lock-in** - Mix spec + ad-hoc tasks
 - **File-based Q&A** - Answer requirements async
 - **Smart iteration** - One command for all refinement
