@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Bert installer - Task management for Claude Code
-# Can be run locally or via: curl -fsSL https://raw.githubusercontent.com/ssr1ram/bert-sidecar/main/scripts/base-install.sh | bash
+# Can be run locally or via: curl -fsSL https://raw.githubusercontent.com/ssr1ram/bert/main/scripts/base-install.sh | bash
 
 VERSION="3.0.0"
 LAST_UPDATED="2025-10-20"
@@ -14,7 +14,7 @@ SCRIPT_NAME="${BASH_SOURCE[0]}"
 if [[ "$SCRIPT_NAME" == "bash" ]] || [[ "$SCRIPT_NAME" == "-bash" ]] || [[ "$SCRIPT_NAME" =~ ^/dev/fd/ ]] || [[ -z "$SCRIPT_NAME" ]]; then
     # Running via curl | bash
     INSTALL_MODE="remote"
-    GITHUB_RAW_URL="https://raw.githubusercontent.com/ssr1ram/bert-sidecar/main"
+    GITHUB_RAW_URL="https://raw.githubusercontent.com/ssr1ram/bert/main"
     echo "Running in REMOTE mode (downloading from GitHub)"
 else
     # Running from a file - check if it's a local clone
@@ -26,7 +26,7 @@ else
         echo "Running in LOCAL mode (using cloned repository)"
     else
         INSTALL_MODE="remote"
-        GITHUB_RAW_URL="https://raw.githubusercontent.com/ssr1ram/bert-sidecar/main"
+        GITHUB_RAW_URL="https://raw.githubusercontent.com/ssr1ram/bert/main"
         echo "Running in REMOTE mode (downloading from GitHub)"
     fi
 fi
@@ -93,7 +93,7 @@ if [ "$INSTALL_MODE" = "local" ]; then
         exit 1
     fi
 else
-    echo "From: GitHub (ssr1ram/bert-sidecar)"
+    echo "From: GitHub (ssr1ram/bert)"
     echo "To:   $TARGET_REPO/.claude/"
     echo ""
 

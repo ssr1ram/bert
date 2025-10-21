@@ -33,7 +33,7 @@ Task management for Claude Code with optional spec-driven development.
 Run this one-line command from your target repository:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ssr1ram/bert-sidecar/main/scripts/base-install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ssr1ram/bert/main/scripts/base-install.sh | bash
 ```
 
 This will download and install all Bert files to your `.claude/` directory.
