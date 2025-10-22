@@ -23,6 +23,11 @@ config:
 
 ## Commands
 
+- `/bert:spec new <description>` - Create requirements with Q&A
+- `/bert:spec iterate <number>` - Generate/update spec from requirements or feedback
+- `/bert:spec tasks <number>` - Create task files from spec
+- `/bert:spec archive <number> [--tasks-only]` - Archive spec and tasks
+
 ### `/bert:spec new <description>`
 
 Start a new spec with requirements gathering.
@@ -129,6 +134,50 @@ This is the **smart iteration command** that handles multiple scenarios:
 
 ---
 
+### `/bert:spec archive <spec_number> [--tasks-only]`
+
+Archive a spec and its associated tasks.
+
+**Example**: `/bert:spec archive 12`
+**Example**: `/bert:spec archive 12 --tasks-only`
+
+**What it does**:
+Archives a completed spec and all related task files to keep your working directories clean.
+
+**Two modes**:
+
+**Mode 1: Archive everything (default)**
+```bash
+/bert:spec archive 12
+```
+- Archives spec directory: `{specs_directory}/spec-12/` → `{archive_specs_directory}/spec-12/`
+- Archives all task files: `task-12.1.md`, `task-12.2.md`, etc. → `{archive_tasks_directory}/`
+- Archives review file: `task-12-review.md` → `{archive_tasks_directory}/`
+- Archives any notes files: `note-12.x.md` → `{archive_notes_directory}/`
+
+**Mode 2: Archive tasks only (keep spec)**
+```bash
+/bert:spec archive 12 --tasks-only
+```
+- **Keeps** spec directory at `{specs_directory}/spec-12/`
+- Archives only task files, review files, and notes
+- Useful when spec serves as living documentation
+
+**When to use**:
+- After feature is completed and in production
+- When you want to clean up working directories
+- To separate active work from completed work
+
+**Output shows**:
+- Number of tasks archived
+- Number of notes archived
+- Whether spec was archived
+- Paths where files were moved
+
+**Note**: Ad-hoc tasks (not from a spec) should use `/bert:task archive <number>` instead.
+
+---
+
 ### `/bert:spec tasks <spec_number>`
 
 Create Bert task files from approved spec.
@@ -210,6 +259,10 @@ Create Bert task files from approved spec.
 # 10. Execute tasks
 /bert:task execute 12.1
 /bert:task execute 12.2
+
+# 11. Archive when done
+/bert:spec archive 12                # Archive spec + all tasks
+/bert:spec archive 12 --tasks-only   # Keep spec as documentation
 ```
 
 ## Spec Directory Structure
