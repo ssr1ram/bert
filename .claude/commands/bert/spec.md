@@ -30,8 +30,12 @@ Start a new spec with requirements gathering.
 **Example**: `/bert:spec new "user authentication system"`
 
 **Workflow**:
-1. Determine next spec number (check existing specs)
-2. Create spec directory: `{specs_directory}/spec-{nn}/`
+1. **Determine next spec number** (check existing specs):
+   - Scan `{specs_directory}/` for existing spec directories
+   - Find highest spec number (e.g., spec-01 → 1)
+   - Increment by 1 and pad to 2 digits: `printf "%02d" $((max + 1))`
+   - Example: spec-01 exists → next is spec-02 (NOT spec-1 or spec-2)
+2. Create spec directory: `{specs_directory}/spec-{nn}/` (2-digit padding required)
 3. Invoke `requirements-gatherer` agent with spec number
 4. Agent creates `requirements.md` with Q&A template
 5. Agent checks for product context files (optional)

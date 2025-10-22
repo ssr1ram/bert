@@ -27,7 +27,9 @@ Use these variables throughout (never hardcode paths).
 **Invoked by**: `/bert:spec new <description>`
 
 **Input**:
-- Spec number (e.g., 12)
+- Spec number with 2-digit padding (e.g., "02", "12", "99")
+  - IMPORTANT: Must be 2-digit format (02 not 2, 12 not 12, etc.)
+  - Main Claude Code instance determines this before invoking agent
 - Feature description
 
 **Steps**:
@@ -41,25 +43,36 @@ Check if `{PRODUCT_DIR}/` exists. If yes, read:
 
 If directory doesn't exist, skip. This is optional context.
 
-### 2. Generate Questions
+### 2. Generate Clarifying Questions
 
-Based on feature description (and product context if available), generate 6-9 targeted NUMBERED questions.
+Based on feature description, generate 5 **minimal** clarifying questions.
 
 **Guidelines**:
-- Start each with a number
-- Propose sensible assumptions
-- Frame as "I'm assuming X, is that correct?"
-- Make easy to confirm or modify
-- Include specific suggestions
-- End with exclusions question
+- Keep it simple - just 5 questions
+- **NO ASSUMPTIONS** - Don't guess what the feature is
+- Focus on understanding WHAT, WHO, and SCOPE
+- Let user define the feature, not you
+- Don't generate detailed questions yet
 
-**CRITICAL**: Always include:
-- Reusability question (existing code to reference)
-- Visual assets request
+**The 5 questions should always be**:
+1. What is this in one sentence?
+2. Who are the primary users?
+3. What scope for Phase 1?
+4. Similar existing features?
+5. Visual mockups available?
 
-### 3. Create Requirements File
+### 3. Create Spec Directory
 
-Write to `{SPECS_DIR}/spec-{number}/requirements.md`:
+Create directory with 2-digit padding:
+```bash
+mkdir -p {SPECS_DIR}/spec-{number}
+```
+
+Where `{number}` is already 2-digit padded (e.g., "02", "12").
+
+### 4. Create Requirements File
+
+Write to `{SPECS_DIR}/spec-{number}/requirements-01.md`:
 
 ```markdown
 ---
@@ -67,89 +80,97 @@ status: awaiting-answers
 created: YYYY-MM-DD
 iteration: 1
 spec_number: {number}
+ready_for_spec: false
 ---
 
-# Spec {number}: Requirements
+# Spec {number}: Requirements - Phase 1
 
 **Description**: {feature description}
 
-## Questions from AI (Iteration 1)
+## Clarifying Questions (Iteration 1)
 
-<!-- USER: Fill in your answers below. Change status to 'answered' when done. -->
+<!-- USER: Fill in your answers below. You can iterate multiple times before generating spec. -->
 
-### Q1: [Question title]
+### 1. What is "{feature description}" in one sentence?
 
-**AI asked**: [Question with assumption]
+Please describe the core purpose or functionality.
 
-**Your answer**:
-<!-- Write answer here. Take multiple sessions if needed. -->
-
-
-### Q2: [Question title]
-
-**AI asked**: [Question]
-
-**Your answer**:
-<!-- Write answer here -->
+**Answer**:
 
 
-[Continue for all 6-9 questions]
+### 2. Who are the primary users of this feature?
 
-### Existing Code Reuse
+(Examples: event attendees, admins, content editors, anonymous visitors, etc.)
 
-**AI asked**: Are there existing features with similar patterns we should reference?
-- Similar UI components to re-use
-- Comparable page layouts or navigation
-- Related backend logic or services
-- Existing models or controllers with similar functionality
-
-**Your answer**:
-<!-- List paths/files or write "none" -->
+**Answer**:
 
 
-### Visual Assets
+### 3. What scope do you want to focus on for Phase 1?
 
-**AI asked**: Do you have mockups, wireframes, or screenshots?
+Tell me what to include in this phase. Examples:
+- "mvp" - bare minimum to get working
+- "core-features" - essential functionality
+- Or describe it your way
+
+**Answer**:
+
+
+### 4. Are there existing features or patterns this is similar to?
+
+This helps me find reusable code and match existing UI patterns.
+
+**Answer**:
+
+
+### 5. Do you have visual mockups, wireframes, or screenshots?
 
 If yes, place them in: `{SPECS_DIR}/spec-{number}/visuals/`
 
-Use descriptive names:
-- homepage-mockup.png
-- dashboard-wireframe.jpg
-- lofi-form-layout.png
+**Answer**:
 
-**Your answer**:
-<!-- "added files" or "none" -->
 
+---
 
 ## Next Steps
 
-When complete:
-1. Change `status: awaiting-answers` to `status: answered`
-2. Run: `/spec process-requirements {number}`
+1. Fill in your answers above
+2. Change `status: awaiting-answers` to `status: answered` in frontmatter
+3. Run: `/bert:spec iterate {number}`
+   - I'll generate spec-01.md from your answers
+   - I may also add follow-up questions to this file
+4. Review spec-01.md - if you want changes:
+   - Add feedback in this file (requirements-01.md)
+   - Run `/bert:spec iterate {number}` again
+   - I'll regenerate spec-01.md based on your feedback
+5. Iterate until spec looks good, then run `/bert:spec tasks {number}`
 ```
 
-### 4. Create Visuals Directory
+### 5. Create Visuals Directory
 
 ```bash
 mkdir -p {SPECS_DIR}/spec-{number}/visuals
 ```
 
-### 5. Inform User
+### 6. Inform User
 
 Tell user:
 ```
-Created spec-{number} with requirements questionnaire.
+Created spec-{number} with 5 clarifying questions.
 
-File: {SPECS_DIR}/spec-{number}/requirements.md
+File: {SPECS_DIR}/spec-{number}/requirements-01.md
 
-Please:
-1. Open file and fill in your answers
-2. Add visual assets to {SPECS_DIR}/spec-{number}/visuals/ if available
-3. Change status to 'answered' when ready
-4. Run: /spec process-requirements {number}
+Next steps:
+1. Fill in your answers to the 5 questions
+2. Change status to 'answered' in frontmatter
+3. Run: /bert:spec iterate {number}
+   - I'll generate spec-01.md immediately
+   - I may also add follow-up questions to requirements-01.md
+4. To refine the spec:
+   - Add feedback in requirements-01.md
+   - Run /bert:spec iterate {number} again
+   - I'll regenerate spec-01.md
 
-You can answer over multiple sessions. File saves your progress.
+requirements-01.md is your central feedback hub!
 ```
 
 **STOP and WAIT** for user to fill out answers.

@@ -32,38 +32,34 @@ Use {SPECS_DIR} variable throughout (never hardcode paths).
 Read `{SPECS_DIR}/spec-{number}/` directory:
 
 **Check 1**: Does `spec.md` exist?
-- YES → Go to **Scenario C** (iterate on spec)
+- YES → Go to **Scenario B** (regenerate spec based on feedback)
 - NO → Continue to Check 2
 
-**Check 2**: Does `requirements.md` exist?
+**Check 2**: Does `requirements-01.md` exist?
 - YES → Go to Check 3
 - NO → Error: "Spec {number} not found. Run /bert:spec new first."
 
-**Check 3**: Read `requirements.md` frontmatter status
-- `status: awaiting-answers` → Error: "Please fill in your answers and change status to 'answered'"
+**Check 3**: Read `requirements-01.md` frontmatter
+- `status: awaiting-answers` → Error: "Please fill in your answers first"
 - `status: answered` → Continue to Check 4
 
-**Check 4**: Are requirements complete?
-- Read all answers
-- Check for visual assets
-- Determine if follow-ups needed
-- YES (complete) → Go to **Scenario A** (generate spec)
-- NO (need follow-ups) → Go to **Scenario B** (add follow-ups)
+**Check 4**: Determine action
+- If spec.md does NOT exist → Go to **Scenario A** (generate spec for first time)
+- If spec.md exists → Go to **Scenario B** (regenerate spec based on feedback)
 
 ---
 
 ### Scenario A: Generate Spec (First Time)
 
-**When**: requirements.md is answered and complete, no spec.md exists
+**When**: User answered 5 questions in requirements-01.md, no spec.md exists yet
 
 **Steps**:
 
 1. **Read requirements completely**:
-   - All Q&A answers
-   - Requirements summary
-   - Reusability opportunities
-   - Visual assets listed
-   - Scope boundaries
+   - All Q&A answers from requirements-01.md (at minimum the 5 clarifying questions)
+   - Any follow-ups if they exist
+   - Visual assets mentioned
+   - Scope defined
 
 2. **Check visual assets**:
    ```bash
@@ -202,12 +198,21 @@ When ready to create tasks, run: /bert:spec tasks {number}
 <!-- Write feedback here, or run /bert:spec tasks when satisfied -->
 ```
 
-5. **Inform user**:
+5. **Optionally add follow-up questions**:
+
+   If while generating spec you realize you need more info:
+   - Append follow-up questions to requirements-01.md
+   - Increment iteration counter
+   - Tell user in your message
+
+6. **Inform user**:
 
 ```
-Generated spec-{number} from requirements.
+Generated spec-{number} from requirements!
 
-File: {SPECS_DIR}/spec-{number}/spec.md
+Files:
+- Spec: {SPECS_DIR}/spec-{number}/spec.md
+- Requirements: {SPECS_DIR}/spec-{number}/requirements-01.md
 
 Spec includes:
 ✅ Core requirements and user stories
@@ -215,160 +220,106 @@ Spec includes:
 ✅ Reusable components: [list or "none found"]
 ✅ Visual design: [from mockups / app patterns]
 
+[If follow-ups added:]
+⚠️  I also added follow-up questions to requirements-01.md
+
 Next steps:
 1. Review spec.md
-2. Add feedback in the feedback section if changes needed
-3. Run /bert:spec iterate {number} to refine
-4. Run /bert:spec tasks {number} when ready to create tasks
+2. If changes needed:
+   - Add feedback in requirements-01.md (the central feedback hub)
+   - Reference specific sections in spec.md if needed
+   - Run /bert:spec iterate {number} to regenerate spec
+3. When spec looks good, run /bert:spec tasks {number}
 ```
 
 ---
 
-### Scenario B: Add Follow-up Questions
+### Scenario B: Regenerate Spec Based on Feedback
 
-**When**: requirements.md is answered but needs clarification
+**When**: spec.md already exists, user has added feedback
+
+**What this means**: User reviewed spec and wants changes.
 
 **Steps**:
 
-1. **Analyze answers** from requirements.md
+1. **Read feedback from BOTH files**
+   - **requirements-01.md**: Look for new "## Feedback" sections or comments
+   - **spec.md**: Look for inline edits, comments, or feedback section
+   - User has flexibility to add feedback in either file
+   - Look for notes anywhere in either file
 
-2. **Check visual assets**:
-   ```bash
-   ls -la {SPECS_DIR}/spec-{number}/visuals/ 2>/dev/null | grep -E '\.(png|jpg|jpeg|gif|svg|pdf)$' || echo "No visual files found"
-   ```
+2. **Re-read spec.md** to understand current state
 
-   If files found but user didn't mention:
-   - Use Read tool to analyze EACH file
-   - Note design elements, patterns, user flows
-   - Check filenames for low-fidelity indicators
-   - Document observations
+3. **Determine what needs to change**:
+   - Additions: "Add section about error handling"
+   - Changes: "The database section needs more detail"
+   - Removals: "Remove the caching strategy"
+   - Clarifications: "Explain how auth works"
 
-3. **Determine follow-ups needed**:
+4. **Regenerate spec.md**:
+   - Use Edit tool to update specific sections
+   - Or rewrite entire file if major changes
+   - Incorporate user feedback
+   - Keep good parts from previous version
 
-   Triggers for follow-ups:
-   - Visuals found but not discussed
-   - Vague requirements need clarification
-   - Missing technical details
-   - Unclear scope boundaries
-   - User didn't provide similar features but task seems common
+5. **Optionally add more follow-up questions**:
+   - If feedback reveals you need more info
+   - Append to requirements-01.md
+   - Increment iteration
 
-4. **Add follow-up questions** to requirements.md:
-
-   Append iteration section:
-
-```markdown
----
-
-## Follow-up Questions (Iteration {N})
-
-<!-- AI added these after reviewing your answers -->
-
-### Q{next}: [Follow-up title]
-
-**AI asked**: [Follow-up question based on answers/visuals]
-
-**Your answer**:
-<!-- Write answer here -->
-
-
-[Additional follow-ups if needed]
-
----
-
-## Next Steps (Updated)
-
-When complete:
-- Change status to 'answered' (in frontmatter above)
-- Run: /bert:spec iterate {number}
-```
-
-5. **Update frontmatter**:
+6. **Update spec.md frontmatter**:
 ```yaml
-status: awaiting-answers
-iteration: {N}
-updated: YYYY-MM-DD
-```
-
-6. **Inform user**:
-
-```
-Added follow-up questions to requirements (iteration {N}).
-
-File: {SPECS_DIR}/spec-{number}/requirements.md
-
-Follow-ups added:
-- [Question 1 topic]
-- [Question 2 topic]
-
-Please:
-1. Answer the new questions
-2. Change status to 'answered'
-3. Run /bert:spec iterate {number} again
-```
-
----
-
-### Scenario C: Update Spec Based on Feedback
-
-**When**: spec.md exists (user wants to refine spec)
-
-**Steps**:
-
-1. **Read spec.md**
-
-2. **Extract feedback** from "**Your feedback**:" section
-
-3. **Analyze feedback type**:
-   - **Expansion**: "expand database section" → Add more detail
-   - **Change**: "change auth to OAuth" → Update sections
-   - **Addition**: "also needs notifications" → Add new section
-   - **Clarification**: "what about error handling?" → Add details
-
-4. **Update spec** using Edit tool:
-   - Modify relevant sections based on feedback
-   - Search codebase again if needed for new requirements
-   - Add new sections if requested
-
-5. **Increment iteration**:
-
-   Update frontmatter:
-```yaml
-status: draft
-updated: YYYY-MM-DD
 iteration: {N+1}
+updated: YYYY-MM-DD
 ```
 
-6. **Clear feedback section**:
+7. **Update notes-01.md** (iteration history log):
+   - Append new iteration section
+   - Document user feedback
+   - Document changes made
+   - Update future specs section if features were moved
+   - Record technical decisions
 
-Replace with:
+   Template:
 ```markdown
----
+### Iteration {N+1} (YYYY-MM-DD)
 
-## Feedback (Iteration {N+1})
+**User Feedback**:
+- [Feedback item 1]
+- [Feedback item 2]
 
-<!-- Previous feedback addressed. Changes made:
-- [Change 1]
-- [Change 2]
--->
+**Changes Made**:
+- ✅ [Change 1]
+- ✅ [Change 2]
 
-**Your feedback**:
-<!-- More feedback? Or run /bert:spec tasks when ready -->
+[If features moved to future specs:]
+**Features Moved to Future Specs**:
+- spec-{NN}: [Feature name] - [Why separate]
 ```
 
-7. **Inform user**:
+8. **Inform user**:
 
 ```
-Spec updated based on feedback (iteration {N+1}).
+Regenerated spec-{number} based on your feedback (iteration {N+1})!
 
-File: {SPECS_DIR}/spec-{number}/spec.md
+Files:
+- Spec: {SPECS_DIR}/spec-{number}/spec.md
+- Requirements: {SPECS_DIR}/spec-{number}/requirements-01.md
 
 Changes made:
 - [Specific change 1]
 - [Specific change 2]
+- [Specific change 3]
 
-Please review. You can:
-- Add more feedback and run /bert:spec iterate {number} again
-- Run /bert:spec tasks {number} to create task files
+[If follow-ups added:]
+⚠️  I also added follow-up questions to requirements-01.md
+
+Next steps:
+1. Review updated spec.md
+2. If more changes needed:
+   - Add more feedback in requirements-01.md
+   - Run /bert:spec iterate {number} again
+3. When satisfied, run /bert:spec tasks {number}
 ```
 
 ---
@@ -377,25 +328,32 @@ Please review. You can:
 
 - **Always read config** from skill.yml
 - **Never hardcode paths** - use {SPECS_DIR}
-- **Detect state first** - check what exists before acting
-- **Smart branching** - requirements follow-ups OR spec generation OR spec updates
+- **Generate spec immediately** on first iterate (when spec.md doesn't exist)
+- **requirements-01.md is feedback hub** - user adds all feedback there
+- **Regenerate spec** when it exists - read feedback from requirements-01.md
+- **Can add follow-up questions** while generating/regenerating spec
 - **Search for reusable code** before generating spec
 - **Reference visual assets** from requirements
 - **No actual code** in spec
 - **Keep sections concise** and skimmable
-- **Document WHY new code** if can't reuse
-- **Support iterations** via feedback
-- **User controls when to create tasks** (no forced approval step)
+- **Support multiple iterations** until user is satisfied
+- **User controls when to create tasks**
 
 ## File Structure
 
 ```
 {SPECS_DIR}/
   spec-{number}/
-    requirements.md              # Input
-    spec.md                      # Generated/updated by this agent
+    requirements-01.md           # Q&A + feedback (one option)
+    spec.md                      # Generated/regenerated by this agent + feedback (another option)
+    notes-01.md                  # Iteration history, future specs, decisions
     visuals/                     # Referenced
 ```
+
+**Feedback Flexibility**: User can add feedback in:
+- requirements-01.md (recommended for major changes)
+- spec.md (inline edits, comments, feedback section)
+- Both files are checked on each iteration
 
 ## Integration
 
