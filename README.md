@@ -97,7 +97,9 @@ config:
 ```bash
 /bert:task create "description"           # New task
 /bert:task create -p 3 "subtask"          # Subtask under task 3
-/bert:task execute 12                     # Work on task
+/bert:task execute 12                     # Execute single task
+/bert:task execute 1.1 to 1.14            # Execute range of tasks
+/bert:task execute 1.1 1.3 1.5            # Execute multiple specific tasks
 /bert:task status 12 completed            # Update status
 /bert:task list [pending|completed]       # List tasks
 /bert:task archive 12                     # Archive
@@ -125,6 +127,55 @@ config:
 ```
 
 Creates: `mission.md`, `roadmap.md`, `tech-stack.md`
+
+## Task Execution Features
+
+The `/bert:task execute` command provides automated task execution with intelligent features:
+
+### Execution Modes
+
+- **Single task**: `/bert:task execute 1.1` - Execute one task
+- **Range**: `/bert:task execute 1.1 to 1.14` - Execute sequential tasks automatically
+- **Multiple**: `/bert:task execute 1.1 1.3 1.5` - Execute specific non-sequential tasks
+
+### Automated Workflow
+
+When executing a task, Bert automatically:
+1. **Reads task file** - Loads objective, scope, and technical approach
+2. **Checks dependencies** - Warns if dependent tasks are not completed
+3. **Updates status** - Changes from pending → in-progress → completed
+4. **Implements work** - Follows the technical approach and deliverables
+5. **Verifies success** - Checks all success criteria from the task file
+6. **Generates review** - Creates review file for testing and feedback
+
+### Dependency Checking
+
+Bert checks task dependencies before execution:
+```
+⚠️  Warning: Task 01.3 depends on:
+- Task 01.1: pending (not completed)
+
+Recommendation: Complete dependencies first, or proceed with caution.
+```
+
+### Range Execution Summary
+
+When executing multiple tasks, Bert provides a summary report:
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Execution Summary
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Completed: 5 tasks
+Failed: 1 task
+
+✅ Task 01.1: Create New Directory Structure
+✅ Task 01.2: Migrate Exa-Search Source Files
+...
+❌ Task 01.6: Update TypeScript Configuration (error: ...)
+
+Next steps: Fix issues with Task 01.6
+```
 
 ## Workflows
 

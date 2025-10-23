@@ -231,6 +231,28 @@ Each file has:
 
 ## Step 5: Execute Tasks
 
+### Execution Options
+
+Bert supports multiple execution modes:
+
+**Single task:**
+```bash
+/bert:task execute 1.1
+```
+
+**Range of tasks (sequential):**
+```bash
+/bert:task execute 1.1 to 1.6
+```
+This executes all tasks from 1.1 through 1.6 automatically, with dependency checking and progress tracking.
+
+**Multiple specific tasks:**
+```bash
+/bert:task execute 1.1 1.3 1.5
+```
+
+### Example: Execute First Task
+
 **Start with first task:**
 
 ```bash
@@ -239,13 +261,17 @@ Each file has:
 
 **What happens:**
 
-1. **AI reads the task** (`task-01.1-database-schema-models.md`)
-2. **AI implements it:**
+1. **AI checks dependencies** - Warns if dependent tasks aren't completed
+2. **AI updates status** - Changes task from `pending` → `in-progress`
+3. **AI reads the task** (`task-01.1-database-schema-models.md`)
+4. **AI implements it:**
    - Creates database migration
    - Defines User, Session, MagicLink models
    - Sets up relationships
    - Runs build to verify
-3. **AI creates review file** (`task-01-review.md`):
+5. **AI verifies success criteria** - Checks all acceptance criteria from task file
+6. **AI updates status** - Changes task to `completed`
+7. **AI creates review file** (`task-01-review.md`):
 
 ```markdown
 # Task 01: User Authentication System - Review
@@ -444,21 +470,43 @@ psql -d mydb -c "\d magic_links"
 
 ## Step 9: Execute Remaining Tasks
 
-**Execute all remaining tasks at once:**
+**Execute all remaining tasks at once using range syntax:**
 
 ```bash
-/bert:task execute 1.2, 1.3, 1.4, 1.5, 1.6
+/bert:task execute 1.2 to 1.6
 ```
 
 **What happens:**
-- AI implements all tasks sequentially:
+- AI executes tasks sequentially from 1.2 through 1.6:
   - 1.2: Magic link generation endpoint
   - 1.3: Email verification & login logic
   - 1.4: Auth middleware for protected routes
   - 1.5: Frontend login UI components
   - 1.6: Session management & logout
+- AI checks dependencies before each task
+- AI updates task status automatically (pending → in-progress → completed)
 - AI updates **same review file** (task-01-review.md) with all changes
 - Runs build after completing all tasks
+- Provides execution summary with completion status
+
+**Execution Summary:**
+
+When executing multiple tasks, Bert provides a summary report:
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Execution Summary
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Completed: 5 tasks
+Failed: 0 tasks
+
+✅ Task 01.2: Magic Link Generation
+✅ Task 01.3: Email Verification & Login
+✅ Task 01.4: Auth Middleware
+✅ Task 01.5: Frontend Login UI
+✅ Task 01.6: Session Management
+```
 
 **After execution completes:**
 
@@ -631,7 +679,9 @@ Works the same as Option B but doesn't require a spec to exist.
 
 # Task workflow
 /bert:task create "description"   # Create ad-hoc task
-/bert:task execute <number>       # Implement task (or comma-separated: 1,2,3)
+/bert:task execute <number>       # Execute single task
+/bert:task execute 1.1 to 1.6     # Execute range of tasks
+/bert:task execute 1.1 1.3 1.5    # Execute specific tasks
 /bert:task list                   # View all tasks
 /bert:task status <number> <status> # Update status
 /bert:task archive <number>       # Archive task files only
