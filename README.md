@@ -1,6 +1,6 @@
 # Bert - Build, Execute, and Refine Tasks
 
-## version 0.1.2
+## version 0.1.3
 
 Task management for Claude Code with optional spec-driven development and built-in review workflow.
 
