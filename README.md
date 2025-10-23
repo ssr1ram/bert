@@ -90,6 +90,12 @@ config:
   # ... archive paths
 ```
 
+#### Universal Numbering
+
+**Tasks and specs share a unified number sequence** to prevent collisions. The system scans both active and archived tasks/specs to determine the next available number.
+
+Example: If you have `task-01`, `task-02`, `spec-03`, the next task or spec will be numbered `04`. This prevents conflicts where `spec-01` would create `task-01.1` colliding with existing `task-01`.
+
 ## Commands
 
 ### `/bert:task` - Task Management

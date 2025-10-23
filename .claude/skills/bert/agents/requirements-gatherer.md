@@ -29,8 +29,14 @@ Use these variables throughout (never hardcode paths).
 **Input**:
 - Spec number with 2-digit padding (e.g., "02", "12", "99")
   - IMPORTANT: Must be 2-digit format (02 not 2, 12 not 12, etc.)
-  - Main Claude Code instance determines this before invoking agent
+  - Main Claude Code instance determines this before invoking agent using universal numbering
 - Feature description
+
+**How main Claude determines spec number**:
+```bash
+SPEC_NUM=$(bash .claude/skills/bert/scripts/find-next-number.sh .claude/skills/bert/skill.yml)
+```
+This ensures no collision with existing tasks OR specs (scans both active and archived).
 
 **Steps**:
 

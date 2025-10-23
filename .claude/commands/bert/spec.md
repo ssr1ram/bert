@@ -35,11 +35,12 @@ Start a new spec with requirements gathering.
 **Example**: `/bert:spec new "user authentication system"`
 
 **Workflow**:
-1. **Determine next spec number** (check existing specs):
-   - Scan `{specs_directory}/` for existing spec directories
-   - Find highest spec number (e.g., spec-01 → 1)
-   - Increment by 1 and pad to 2 digits: `printf "%02d" $((max + 1))`
-   - Example: spec-01 exists → next is spec-02 (NOT spec-1 or spec-2)
+1. **Determine next number using universal numbering**:
+   - Run: `bash .claude/skills/bert/scripts/find-next-number.sh .claude/skills/bert/skill.yml`
+   - This scans BOTH specs AND tasks (active + archived)
+   - Returns next available number with 2-digit padding
+   - Example: If highest is task-12 or spec-12 → returns "13"
+   - **Why**: Prevents collisions between spec-01 and task-01
 2. Create spec directory: `{specs_directory}/spec-{nn}/` (2-digit padding required)
 3. Invoke `requirements-gatherer` agent with spec number
 4. Agent creates `requirements.md` with Q&A template

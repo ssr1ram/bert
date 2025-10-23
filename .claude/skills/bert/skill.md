@@ -77,6 +77,40 @@ Examples:
 
 Read the config file to determine the actual directories for all operations.
 
+## Universal Numbering System
+
+**CRITICAL**: Specs and tasks share a unified numbering sequence to prevent collisions.
+
+**Numbering Script**: `.claude/skills/bert/scripts/find-next-number.sh`
+
+**What it scans**:
+- Active tasks: `{tasks_directory}/task-{nn}-*.md`
+- Archived tasks: `{archive_tasks_directory}/task-{nn}-*.md`
+- Active specs: `{specs_directory}/spec-{nn}/`
+- Archived specs: `{archive_specs_directory}/spec-{nn}/`
+
+**Returns**: Next available number (2-digit padded)
+
+**Used by**:
+- `/bert:task create` - For top-level tasks
+- `/bert:spec new` - For new specs
+
+**Example**:
+```bash
+# Current state:
+task-01-gather-steps.md
+task-02-exe-web.md
+spec-03/
+
+# Next number: 04 (for either task OR spec)
+```
+
+**Why this matters**:
+- Prevents `task-01.1` from colliding with `task-01`
+- Ensures chronological ordering across all work
+- Makes numbering predictable and consistent
+- Archives are considered to prevent number reuse
+
 ## Core Operations
 
 ### 1. Task Author (`task-author`)
@@ -260,51 +294,11 @@ to_kebab_case() {
     echo "$1" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//'
 }
 
-# Function to find next task number by scanning both active and archived tasks
-find_next_task_number() {
-    local max_num=0
-
-    # Scan active tasks directory
-    if [[ -d "$TASKS_DIR" ]]; then
-        while IFS= read -r -d '' file; do
-            filename=$(basename "$file")
-            # Extract top-level task number (e.g., task-03-*.md -> 03, task-03.1-*.md is ignored)
-            if [[ "$filename" =~ ^task-([0-9]+)-.*\.md$ ]]; then
-                num="${BASH_REMATCH[1]}"
-                # Remove leading zeros for comparison
-                num=$((10#$num))
-                if [[ $num -gt $max_num ]]; then
-                    max_num=$num
-                fi
-            fi
-        done < <(find "$TASKS_DIR" -maxdepth 1 -name "task-*.md" -print0 2>/dev/null)
-    fi
-
-    # Scan archive tasks directory
-    if [[ -d "$ARCHIVE_TASKS" ]]; then
-        while IFS= read -r -d '' file; do
-            filename=$(basename "$file")
-            # Extract top-level task number (e.g., task-03-*.md -> 03, task-03.1-*.md is ignored)
-            if [[ "$filename" =~ ^task-([0-9]+)-.*\.md$ ]]; then
-                num="${BASH_REMATCH[1]}"
-                # Remove leading zeros for comparison
-                num=$((10#$num))
-                if [[ $num -gt $max_num ]]; then
-                    max_num=$num
-                fi
-            fi
-        done < <(find "$ARCHIVE_TASKS" -maxdepth 1 -name "task-*.md" -print0 2>/dev/null)
-    fi
-
-    # Next number is max + 1, padded to 2 digits
-    next_num=$((max_num + 1))
-    printf "%02d" "$next_num"
-}
-
 # If no parent, create top-level task
 if [[ -z "$PARENT_NUM" ]]; then
-    # Find next task number
-    TASK_NUM=$(find_next_task_number)
+    # Use universal numbering script (scans both tasks AND specs)
+    SCRIPT_DIR="$(cd "$(dirname "$CONFIG_FILE")" && pwd)/skills/bert/scripts"
+    TASK_NUM=$(bash "$SCRIPT_DIR/find-next-number.sh" "$CONFIG_FILE")
 
     # Generate slug
     SLUG=$(to_kebab_case "$DESCRIPTION")
