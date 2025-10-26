@@ -1,8 +1,8 @@
 # Bert - Build, Execute, and Refine Tasks
 
-## version 0.1.3
+## version 0.2.1
 
-Task management for Claude Code with optional spec-driven development and built-in review workflow.
+Task management for Claude Code with optional spec-driven development, built-in review workflow, and Rust CLI.
 
 ## Quick Start
 
@@ -31,6 +31,7 @@ Task management for Claude Code with optional spec-driven development and built-
 - **Review workflow** - AI auto-generates review files, you add issues, AI fixes and documents
 - **Spec development** - Optional requirements + spec writing for complex features
 - **Product context** - Optional mission/roadmap/tech-stack for better AI assistance
+- **Rust CLI** - Optional standalone CLI for task operations (complements Claude Code integration)
 
 ## Installation
 
@@ -95,6 +96,41 @@ config:
 **Tasks and specs share a unified number sequence** to prevent collisions. The system scans both active and archived tasks/specs to determine the next available number.
 
 Example: If you have `task-01`, `task-02`, `spec-03`, the next task or spec will be numbered `04`. This prevents conflicts where `spec-01` would create `task-01.1` colliding with existing `task-01`.
+
+### Rust CLI (Optional)
+
+A standalone Rust CLI is available for faster task operations. It complements (doesn't replace) the Claude Code integration.
+
+**Installation:**
+
+```bash
+# From the bert directory
+cargo install --path .
+```
+
+This installs the `bert` binary to `~/.cargo/bin/bert`.
+
+**Usage:**
+
+```bash
+# Create task stubs
+bert task stub "add new feature"
+bert task stub -p 3 "subtask under task 3"
+
+# Archive tasks
+bert task archive 08              # Archive single task
+bert task archive 08 -r           # Archive with all children
+
+# Help
+bert --help
+bert task --help
+```
+
+**When to use:**
+- **Rust CLI**: Quick task stub creation and archiving from command line
+- **Claude Code** (`/bert:task`): Full workflow with AI execution, review generation, status updates
+
+The CLI reads the same `skill.yml` configuration and works from any project subdirectory.
 
 ## Commands
 

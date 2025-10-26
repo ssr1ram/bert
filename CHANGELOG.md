@@ -2,6 +2,22 @@
 
 All notable changes are documented here.
 
+## [0.2.1] - 2025-10-26
+
+### Added
+- Rust CLI (`bert`) for fast task operations from command line
+  - `bert task stub` - Create task stubs with parent-child support
+  - `bert task archive` - Archive tasks with recursive children option
+  - Universal numbering system (scans tasks + specs across active/archive)
+  - Project root detection from any subdirectory
+  - Full integration with existing `skill.yml` configuration
+- Comprehensive test suite (59 tests: 52 unit + 7 integration)
+- Rust CLI documentation in README
+
+### Changed
+- Version bumped to 0.2.1 to reflect new Rust CLI functionality
+- README updated with Rust CLI installation and usage instructions
+
 ## [0.1.3] - 2025-10-22
 
 ### Added
