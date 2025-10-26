@@ -36,6 +36,14 @@ pub enum BertError {
     /// Parent task not found when creating subtask
     #[error("Parent task {0} not found. Cannot create subtask.")]
     ParentNotFound(String),
+
+    /// Generic not found error
+    #[error("Not found: {0}")]
+    NotFound(String),
+
+    /// Resource already exists
+    #[error("Already exists: {0}")]
+    AlreadyExists(String),
 }
 
 /// Result type alias for bert operations
@@ -65,8 +73,12 @@ impl BertError {
         match self {
             BertError::ProjectNotFound(_) => exit_codes::PROJECT_NOT_FOUND,
             BertError::ConfigError(_) | BertError::YamlError(_) => exit_codes::CONFIG_ERROR,
-            BertError::TaskNotFound(_) | BertError::ParentNotFound(_) => exit_codes::TASK_NOT_FOUND,
-            BertError::FileError(_) | BertError::IoError(_) => exit_codes::FILE_ERROR,
+            BertError::TaskNotFound(_) | BertError::ParentNotFound(_) | BertError::NotFound(_) => {
+                exit_codes::TASK_NOT_FOUND
+            }
+            BertError::FileError(_) | BertError::IoError(_) | BertError::AlreadyExists(_) => {
+                exit_codes::FILE_ERROR
+            }
             BertError::InvalidInput(_) => exit_codes::INVALID_INPUT,
         }
     }

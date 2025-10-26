@@ -10,7 +10,7 @@ mod numbering;
 mod project;
 mod utils;
 
-use commands::{task_archive, task_stub};
+use commands::{spec_archive, spec_stub, task_archive, task_stub};
 use config::load_config;
 use errors::BertError;
 
@@ -30,6 +30,11 @@ enum Commands {
     Task {
         #[command(subcommand)]
         operation: TaskOperations,
+    },
+    /// Spec management operations
+    Spec {
+        #[command(subcommand)]
+        operation: SpecOperations,
     },
 }
 
@@ -64,6 +69,27 @@ enum TaskOperations {
     },
 }
 
+#[derive(Subcommand)]
+enum SpecOperations {
+    /// Create a new spec stub directory
+    ///
+    /// Examples:
+    ///   bert spec stub "implement user authentication"
+    Stub {
+        /// Spec description
+        description: String,
+    },
+
+    /// Archive a spec and all its related tasks
+    ///
+    /// Examples:
+    ///   bert spec archive 08
+    Archive {
+        /// Spec number to archive
+        spec_number: String,
+    },
+}
+
 fn main() {
     let cli = Cli::parse();
 
@@ -72,9 +98,14 @@ fn main() {
             TaskOperations::Stub { description, parent } => {
                 handle_task_stub(&description, parent.as_deref())
             }
-            TaskOperations::Archive { task_number, recursive } => {
-                handle_task_archive(&task_number, recursive)
-            }
+            TaskOperations::Archive {
+                task_number,
+                recursive,
+            } => handle_task_archive(&task_number, recursive),
+        },
+        Commands::Spec { operation } => match operation {
+            SpecOperations::Stub { description } => handle_spec_stub(&description),
+            SpecOperations::Archive { spec_number } => handle_spec_archive(&spec_number),
         },
     };
 
@@ -100,10 +131,36 @@ fn handle_task_archive(task_number: &str, recursive: bool) -> Result<(), BertErr
     let archived_count = task_archive::archive_task(&config, task_number, recursive)?;
 
     if recursive {
-        println!("✓ Archived {} files (task + children + notes)", archived_count);
+        println!(
+            "✓ Archived {} files (task + children + notes)",
+            archived_count
+        );
     } else {
         println!("✓ Archived {} file(s)", archived_count);
     }
+
+    Ok(())
+}
+
+fn handle_spec_stub(description: &str) -> Result<(), BertError> {
+    let config = load_config()?;
+
+    let (spec_number, dirpath) = spec_stub::create_spec_stub(&config, description)?;
+
+    println!("✓ Created spec {}: {}", spec_number, dirpath);
+
+    Ok(())
+}
+
+fn handle_spec_archive(spec_number: &str) -> Result<(), BertError> {
+    let config = load_config()?;
+
+    let archived_count = spec_archive::archive_spec(&config, spec_number)?;
+
+    println!(
+        "✓ Archived {} items (spec + related tasks)",
+        archived_count
+    );
 
     Ok(())
 }
