@@ -1,0 +1,129 @@
+#!/bin/bash
+# Bert - Task management CLI wrapper
+# Usage: bert task stub "description"
+#        bert task stub -p 3 "subtask description"
+
+# Function to find the bert project root by walking up directory tree
+find_bert_root() {
+    local current_dir="$PWD"
+
+    while [[ "$current_dir" != "/" ]]; do
+        if [[ -f "$current_dir/.claude/skills/bert/skill.yml" ]]; then
+            echo "$current_dir"
+            return 0
+        fi
+        current_dir="$(dirname "$current_dir")"
+    done
+
+    return 1
+}
+
+# Find the bert project root
+PROJECT_ROOT=$(find_bert_root)
+
+if [[ -z "$PROJECT_ROOT" ]]; then
+    echo "Error: Not in a bert project" >&2
+    echo "Looked for .claude/skills/bert/skill.yml in current directory and parent directories" >&2
+    echo "Current directory: $PWD" >&2
+    exit 1
+fi
+
+# Bert configuration and scripts
+BERT_CONFIG="$PROJECT_ROOT/.claude/skills/bert/skill.yml"
+BERT_SCRIPTS="$PROJECT_ROOT/.claude/skills/bert/scripts"
+
+# Parse command
+DOMAIN="$1"
+OPERATION="$2"
+shift 2 || true
+
+case "$DOMAIN $OPERATION" in
+    "task stub")
+        # Run task-stub.sh directly (instant, free)
+        JSON_OUTPUT=$(bash "$BERT_SCRIPTS/task-stub.sh" "$BERT_CONFIG" "$@")
+
+        # Check for errors
+        if echo "$JSON_OUTPUT" | grep -q '"error"'; then
+            echo "$JSON_OUTPUT" | grep -o '"error": "[^"]*"' | sed 's/"error": "\(.*\)"/Error: \1/' >&2
+            exit 1
+        fi
+
+        # Extract values from JSON and display friendly message
+        TASK_NUM=$(echo "$JSON_OUTPUT" | grep -o '"task_number": "[^"]*"' | cut -d'"' -f4)
+        FILEPATH=$(echo "$JSON_OUTPUT" | grep -o '"filepath": "[^"]*"' | cut -d'"' -f4)
+
+        echo "✓ Created task $TASK_NUM: $FILEPATH"
+        ;;
+
+    "task create")
+        # Future: task-create.sh
+        echo "⚠️  Not implemented yet. Use: /bert task create" >&2
+        exit 1
+        ;;
+
+    "task list")
+        # Future: list-tasks.sh
+        echo "⚠️  Not implemented yet. Use: /bert task list" >&2
+        exit 1
+        ;;
+
+    "task status")
+        # Future: update-status.sh
+        echo "⚠️  Not implemented yet. Use: /bert task status" >&2
+        exit 1
+        ;;
+
+    "task archive")
+        # Future: archive-task.sh
+        echo "⚠️  Not implemented yet. Use: /bert task archive" >&2
+        exit 1
+        ;;
+
+    "task iterate"|"task execute")
+        # AI operations - redirect to Claude Code
+        echo "⚠️  AI operation - use Claude Code:" >&2
+        echo "   /bert:task $OPERATION $*" >&2
+        exit 1
+        ;;
+
+    "spec "*|"plan"|"orchestrate "*|"standards "*)
+        # AI operations - redirect to Claude Code
+        echo "⚠️  AI operation - use Claude Code:" >&2
+        echo "   /bert:$DOMAIN $OPERATION $*" >&2
+        exit 1
+        ;;
+
+    ""|"help"|"-h"|"--help")
+        cat <<EOF
+Bert - Task Management CLI
+
+Usage:
+  bert task stub <description>          Create a minimal task stub
+  bert task stub -p <parent> <desc>     Create subtask stub under parent
+
+Examples:
+  bert task stub "update authentication"
+  bert task stub -p 3 "add validation"
+
+AI Operations (use Claude Code):
+  /bert:task iterate <number>           Flesh out stub with AI
+  /bert:task execute <number>           Implement task with AI
+  /bert:task create <desc>              Create full task with AI
+  /bert:spec new <desc>                 Create new spec with AI
+
+Coming Soon:
+  bert task list [filter]               List all tasks
+  bert task status <num> <status>       Update task status
+  bert task archive <number>            Archive a task
+
+Project: $PROJECT_ROOT
+Config: $BERT_CONFIG
+EOF
+        ;;
+
+    *)
+        echo "Error: Unknown command: $DOMAIN $OPERATION" >&2
+        echo "Run 'bert help' for usage information" >&2
+        exit 1
+        ;;
+esac
