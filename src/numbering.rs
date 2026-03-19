@@ -19,7 +19,7 @@ use std::path::Path;
 /// use bert_cli::numbering::find_next_number;
 /// use bert_cli::config::load_config;
 ///
-/// let config = load_config()?;
+/// let config = load_config(None)?;
 /// let next = find_next_number(&config)?;
 /// println!("Next number: {}", next); // e.g., "09"
 /// # Ok::<(), bert_cli::errors::BertError>(())
@@ -29,7 +29,8 @@ pub fn find_next_number(config: &BertConfig) -> Result<String> {
 
     // Regex patterns (compiled once for performance)
     let task_pattern = Regex::new(r"^task-(\d+)-.*\.md$").unwrap();
-    let spec_pattern = Regex::new(r"^spec-(\d+)$").unwrap();
+    // Spec pattern matches both "spec-08" and "spec-08-slug"
+    let spec_pattern = Regex::new(r"^spec-(\d+)").unwrap();
 
     // Scan active tasks
     if let Some(max) = scan_tasks_directory(&config.tasks_directory, &task_pattern) {
@@ -139,13 +140,21 @@ mod tests {
         let root = temp_dir.path();
         BertConfig {
             project_root: root.to_path_buf(),
+            bert_root: root.join("bert"),
             tasks_directory: root.join("tasks"),
             notes_directory: Some(root.join("notes")),
             archive_tasks_directory: Some(root.join("archive/tasks")),
             archive_notes_directory: Some(root.join("archive/notes")),
             specs_directory: root.join("specs"),
             archive_specs_directory: Some(root.join("archive/specs")),
+            archive_directory: Some(root.join("archive")),
             product_directory: Some(root.join("product")),
+            prompt_logs: Some(root.join("prompt-logs")),
+            library_directory: Some(root.join("library")),
+            sets_directory: Some(root.join("sets")),
+            tui: crate::models::config::TuiConfig {
+                pane_widths: Some(crate::models::config::PaneWidths::default()),
+            },
         }
     }
 
@@ -268,5 +277,34 @@ mod tests {
 
         let next = find_next_number(&config).unwrap();
         assert_eq!(next, "02"); // Should be padded to 2 digits
+    }
+
+    #[test]
+    fn test_find_next_number_with_spec_slugs() {
+        let temp_dir = TempDir::new().unwrap();
+        let config = create_test_config(&temp_dir);
+
+        // Create specs with slugs (new format)
+        fs::create_dir_all(&config.specs_directory).unwrap();
+        fs::create_dir_all(config.specs_directory.join("spec-05-api")).unwrap();
+        fs::create_dir_all(config.specs_directory.join("spec-08-auth")).unwrap();
+        fs::create_dir_all(config.specs_directory.join("spec-12-dms")).unwrap();
+
+        let next = find_next_number(&config).unwrap();
+        assert_eq!(next, "13"); // Max is spec-12-dms
+    }
+
+    #[test]
+    fn test_find_next_number_with_mixed_spec_formats() {
+        let temp_dir = TempDir::new().unwrap();
+        let config = create_test_config(&temp_dir);
+
+        // Mix of old format (spec-08) and new format (spec-12-slug)
+        fs::create_dir_all(&config.specs_directory).unwrap();
+        fs::create_dir_all(config.specs_directory.join("spec-08")).unwrap(); // old
+        fs::create_dir_all(config.specs_directory.join("spec-12-dms")).unwrap(); // new
+
+        let next = find_next_number(&config).unwrap();
+        assert_eq!(next, "13"); // Max is spec-12-dms
     }
 }

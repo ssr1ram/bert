@@ -3,12 +3,12 @@ use crate::errors::{BertError, Result};
 use crate::models::config::{BertConfig, SkillConfig};
 use crate::project::{find_project_root, get_skill_yml_path};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Load bert configuration from skill.yml
 ///
 /// This function:
-/// 1. Finds the project root
+/// 1. Finds the project root (or uses the provided override)
 /// 2. Reads the skill.yml file
 /// 3. Parses the YAML
 /// 4. Resolves all relative paths to absolute paths
@@ -25,13 +25,17 @@ use std::path::Path;
 ///
 /// ```no_run
 /// use bert_cli::config::load_config;
+/// use std::path::PathBuf;
 ///
-/// let config = load_config()?;
+/// let config = load_config(None)?;
 /// println!("Tasks directory: {}", config.tasks_directory.display());
 /// # Ok::<(), bert_cli::errors::BertError>(())
 /// ```
-pub fn load_config() -> Result<BertConfig> {
-    let project_root = find_project_root()?;
+pub fn load_config(bert_dir: Option<PathBuf>) -> Result<BertConfig> {
+    let project_root = match bert_dir {
+        Some(path) => path.canonicalize()?,
+        None => find_project_root()?,
+    };
     load_config_from_root(&project_root)
 }
 
@@ -41,28 +45,22 @@ pub fn load_config() -> Result<BertConfig> {
 pub fn load_config_from_root(project_root: &Path) -> Result<BertConfig> {
     let skill_yml_path = get_skill_yml_path(project_root);
 
-    // Read the skill.yml file
+    // Read the skills.yml file
     let yaml_content = fs::read_to_string(&skill_yml_path)
         .map_err(|e| BertError::ConfigError(
-            format!("Failed to read skill.yml at {}: {}", skill_yml_path.display(), e)
+            format!("Failed to read skills.yml at {}: {}", skill_yml_path.display(), e)
         ))?;
 
     // Parse YAML
     let skill_config: SkillConfig = serde_yaml::from_str(&yaml_content)
         .map_err(|e| BertError::ConfigError(
-            format!("Failed to parse skill.yml: {}", e)
+            format!("Failed to parse skills.yml: {}", e)
         ))?;
 
-    // Validate required fields
-    if skill_config.config.tasks_directory.is_empty() {
+    // Validate required field: bert_root
+    if skill_config.config.bert_root.is_empty() {
         return Err(BertError::ConfigError(
-            "tasks_directory is required but was empty".to_string()
-        ));
-    }
-
-    if skill_config.config.specs_directory.is_empty() {
-        return Err(BertError::ConfigError(
-            "specs_directory is required but was empty".to_string()
+            "bert_root is required but was empty".to_string()
         ));
     }
 
@@ -80,10 +78,8 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let root = temp_dir.path();
 
-        // Create skill.yml
-        let skill_dir = root.join(".claude/skills/bert");
-        fs::create_dir_all(&skill_dir).unwrap();
-        fs::write(skill_dir.join("skill.yml"), yaml_content).unwrap();
+        // Create skills.yml
+        fs::write(root.join("skills.yml"), yaml_content).unwrap();
 
         temp_dir
     }
@@ -92,13 +88,16 @@ mod tests {
     fn test_load_valid_config() {
         let yaml = r#"
 config:
-  tasks_directory: docs/bert/tasks
-  specs_directory: docs/bert/specs
-  notes_directory: docs/bert/notes
+  bert_root: docs/bert
 "#;
         let temp_dir = create_test_project(yaml);
         let config = load_config_from_root(temp_dir.path()).unwrap();
 
+        // Test that default paths are used
+        assert_eq!(
+            config.bert_root,
+            temp_dir.path().join("docs/bert")
+        );
         assert_eq!(
             config.tasks_directory,
             temp_dir.path().join("docs/bert/tasks")
@@ -111,6 +110,10 @@ config:
             config.notes_directory,
             Some(temp_dir.path().join("docs/bert/notes"))
         );
+        assert_eq!(
+            config.library_directory,
+            Some(temp_dir.path().join("docs/bert/prompts/library"))
+        );
     }
 
     #[test]
@@ -118,10 +121,7 @@ config:
         let temp_dir = TempDir::new().unwrap();
         let root = temp_dir.path();
 
-        // Create directory structure but no skill.yml
-        let skill_dir = root.join(".claude/skills/bert");
-        fs::create_dir_all(&skill_dir).unwrap();
-
+        // Create directory but no skills.yml
         let result = load_config_from_root(root);
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), BertError::ConfigError(_)));
@@ -142,7 +142,7 @@ config:
         let yaml = r#"
 config:
   tasks_directory: docs/bert/tasks
-  # specs_directory is missing!
+  # bert_root is missing!
 "#;
         let temp_dir = create_test_project(yaml);
 
@@ -154,8 +154,7 @@ config:
     fn test_load_config_empty_required_field() {
         let yaml = r#"
 config:
-  tasks_directory: ""
-  specs_directory: docs/bert/specs
+  bert_root: ""
 "#;
         let temp_dir = create_test_project(yaml);
 
@@ -168,6 +167,7 @@ config:
     fn test_load_config_full() {
         let yaml = r#"
 config:
+  bert_root: docs/bert
   tasks_directory: docs/bert/tasks
   notes_directory: docs/bert/notes
   archive_tasks_directory: docs/bert/archive/tasks
@@ -180,8 +180,28 @@ config:
         let config = load_config_from_root(temp_dir.path()).unwrap();
 
         assert_eq!(config.project_root, temp_dir.path());
+        assert_eq!(config.bert_root, temp_dir.path().join("docs/bert"));
         assert!(config.archive_tasks_directory.is_some());
         assert!(config.archive_specs_directory.is_some());
         assert!(config.product_directory.is_some());
+    }
+
+    #[test]
+    fn test_load_config_with_override() {
+        let yaml = r#"
+config:
+  bert_root: docs/bert
+"#;
+        let temp_dir = create_test_project(yaml);
+        let override_path = temp_dir.path().to_path_buf();
+
+        // Create the expected bert_root directory so canonicalize() works
+        fs::create_dir_all(override_path.join("docs/bert")).unwrap();
+
+        // Should use the provided override path
+        let config = load_config(Some(override_path.clone())).unwrap();
+
+        assert_eq!(config.project_root.canonicalize().unwrap(), override_path.canonicalize().unwrap());
+        assert_eq!(config.bert_root.canonicalize().unwrap(), override_path.join("docs/bert").canonicalize().unwrap());
     }
 }

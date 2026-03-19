@@ -30,25 +30,30 @@ pub fn archive_spec(config: &BertConfig, spec_number: &str) -> Result<usize> {
 }
 
 /// Find spec directory by spec number
+///
+/// Handles both old format (spec-08) and new format (spec-08-slug)
 fn find_spec_dir(config: &BertConfig, spec_number: &str) -> Result<PathBuf> {
-    let dirname = format!("spec-{}", spec_number);
-    let dirpath = config.specs_directory.join(&dirname);
+    let pattern = format!("spec-{}", spec_number);
+    let entries = fs::read_dir(&config.specs_directory)?;
 
-    if !dirpath.exists() {
-        return Err(BertError::NotFound(format!(
-            "Spec directory not found: {}",
-            dirname
-        )));
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if let Some(dirname) = path.file_name().and_then(|n| n.to_str()) {
+            // Match both "spec-08" and "spec-08-slug"
+            if dirname.starts_with(&pattern)
+                && (dirname == pattern || dirname.starts_with(&format!("{}-", pattern)))
+            {
+                if path.is_dir() {
+                    return Ok(path);
+                }
+            }
+        }
     }
 
-    if !dirpath.is_dir() {
-        return Err(BertError::InvalidInput(format!(
-            "Path exists but is not a directory: {}",
-            dirname
-        )));
-    }
-
-    Ok(dirpath)
+    Err(BertError::NotFound(format!(
+        "Spec directory not found for spec number: {}",
+        spec_number
+    )))
 }
 
 /// Archive the spec directory
@@ -236,13 +241,21 @@ mod tests {
         let root = temp_dir.path();
         BertConfig {
             project_root: root.to_path_buf(),
+            bert_root: root.join("bert"),
             tasks_directory: root.join("tasks"),
             notes_directory: Some(root.join("notes")),
             archive_tasks_directory: Some(root.join("archive/tasks")),
             archive_notes_directory: Some(root.join("archive/notes")),
             specs_directory: root.join("specs"),
             archive_specs_directory: Some(root.join("archive/specs")),
-            product_directory: None,
+            archive_directory: Some(root.join("archive")),
+            product_directory: Some(root.join("product")),
+            prompt_logs: Some(root.join("prompt-logs")),
+            library_directory: Some(root.join("library")),
+            sets_directory: Some(root.join("sets")),
+            tui: crate::models::config::TuiConfig {
+                pane_widths: Some(crate::models::config::PaneWidths::default()),
+            },
         }
     }
 

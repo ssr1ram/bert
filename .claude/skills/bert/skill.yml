@@ -2,23 +2,48 @@
 # Build, Execute, and Refine Tasks
 
 name: bert
-version: 1.0.0
+version: "0.2.1"
 description: Task management system for creating, organizing, and tracking hierarchical tasks with arbitrary nesting depth
+
+# Compatibility metadata for Agent-OS harmony
+compatibility:
+  agent_os_version: "2.1"
+
+# Feature flags (all disabled for Phase 0)
+features:
+  standards_injection: false       # Phase 1: Standards system
+  workflow_modularization: false   # Phase 2: Modular workflows
+  frontmatter_agents: false        # Phase 3: Agent frontmatter format
+
+# Paths for future phases
+paths:
+  standards_directory: docs/bert/standards
+  workflows_directory: .claude/skills/bert/workflows
 
 # Configuration
 config:
-  # Task directories
-  tasks_directory: docs/bert/tasks
-  notes_directory: docs/bert/notes
-  archive_tasks_directory: docs/bert/archive/tasks
-  archive_notes_directory: docs/bert/archive/notes
+  # Root directory for BERT
+  # All directory paths now use the default layout under bert_root:
+  # - tasks: {bert_root}/tasks
+  # - specs: {bert_root}/specs
+  # - notes: {bert_root}/notes
+  # - product: {bert_root}/product
+  # - prompts/library: {bert_root}/prompts/library
+  # - prompts/sets: {bert_root}/prompts/sets
+  # - prompts/logs: {bert_root}/prompts/logs
+  # - archive: {bert_root}/archive
+  # - archive/tasks: {bert_root}/archive/tasks
+  # - archive/specs: {bert_root}/archive/specs
+  # - archive/notes: {bert_root}/archive/notes
+  bert_root: docs/bert
 
-  # Spec directories
-  specs_directory: docs/bert/specs
-  archive_specs_directory: docs/bert/archive/specs
-
-  # Product context (optional)
-  product_directory: docs/bert/product
+  # TUI configuration
+  tui:
+    # Pane width percentages (must sum to 100)
+    pane_widths:
+      explorer: 30    # Left pane - file tree (reduced)
+      buffer: 30      # Middle pane - working buffer/queue (same)
+      preview: 40     # Right pane - file preview (increased)
 
 # Available operations
 operations:

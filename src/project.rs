@@ -4,13 +4,14 @@ use std::env;
 use std::path::{Path, PathBuf};
 
 /// The relative path to the skill.yml file from project root
-const SKILL_YML_PATH: &str = ".claude/skills/bert/skill.yml";
+/// The relative path to the skill.yml file from project root
+const SKILL_YML_PATH: &str = "skills.yml";
 
 /// Find the bert project root by walking up the directory tree
 ///
 /// Starts from the current directory and walks up, looking for
-/// `.claude/skills/bert/skill.yml`. Returns the directory containing
-/// the `.claude` directory.
+/// `skills.yml`. Returns the directory containing
+/// the `skills.yml` file.
 ///
 /// # Errors
 ///
@@ -42,7 +43,7 @@ pub fn find_project_root_from(start_dir: PathBuf) -> Result<PathBuf> {
     let mut current = start_dir.canonicalize()?;
 
     loop {
-        // Check if skill.yml exists in current directory
+        // Check if skills.yml exists in current directory
         let skill_path = current.join(SKILL_YML_PATH);
 
         if skill_path.exists() && skill_path.is_file() {
@@ -62,7 +63,7 @@ pub fn find_project_root_from(start_dir: PathBuf) -> Result<PathBuf> {
     }
 }
 
-/// Get the path to skill.yml for a given project root
+/// Get the path to skills.yml for a given project root
 pub fn get_skill_yml_path(project_root: &Path) -> PathBuf {
     project_root.join(SKILL_YML_PATH)
 }
@@ -79,10 +80,8 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let root = temp_dir.path();
 
-        // Create skill.yml
-        let skill_dir = root.join(".claude/skills/bert");
-        fs::create_dir_all(&skill_dir).unwrap();
-        fs::write(skill_dir.join("skill.yml"), "test: true").unwrap();
+        // Create skills.yml
+        fs::write(root.join("skills.yml"), "test: true").unwrap();
 
         // Should find root from root directory
         let found = find_project_root_from(root.to_path_buf()).unwrap();
@@ -95,10 +94,8 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let root = temp_dir.path();
 
-        // Create skill.yml
-        let skill_dir = root.join(".claude/skills/bert");
-        fs::create_dir_all(&skill_dir).unwrap();
-        fs::write(skill_dir.join("skill.yml"), "test: true").unwrap();
+        // Create skills.yml
+        fs::write(root.join("skills.yml"), "test: true").unwrap();
 
         // Create nested subdirectory
         let subdir = root.join("docs/bert/tasks");
@@ -111,7 +108,7 @@ mod tests {
 
     #[test]
     fn test_find_project_root_not_found() {
-        // Create temporary directory without skill.yml
+        // Create temporary directory without skills.yml
         let temp_dir = TempDir::new().unwrap();
         let root = temp_dir.path().join("some/deep/path");
         fs::create_dir_all(&root).unwrap();
@@ -128,7 +125,7 @@ mod tests {
         let skill_path = get_skill_yml_path(&root);
         assert_eq!(
             skill_path,
-            PathBuf::from("/project/root/.claude/skills/bert/skill.yml")
+            PathBuf::from("/project/root/skills.yml")
         );
     }
 
@@ -138,10 +135,8 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let root = temp_dir.path();
 
-        // Create skill.yml
-        let skill_dir = root.join(".claude/skills/bert");
-        fs::create_dir_all(&skill_dir).unwrap();
-        fs::write(skill_dir.join("skill.yml"), "test: true").unwrap();
+        // Create skills.yml
+        fs::write(root.join("skills.yml"), "test: true").unwrap();
 
         // Create deeply nested subdirectory
         let deep_subdir = root.join("a/b/c/d/e/f");

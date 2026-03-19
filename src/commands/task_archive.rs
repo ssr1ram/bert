@@ -179,13 +179,21 @@ mod tests {
         let root = temp_dir.path();
         BertConfig {
             project_root: root.to_path_buf(),
+            bert_root: root.join("bert"),
             tasks_directory: root.join("tasks"),
             notes_directory: Some(root.join("notes")),
             archive_tasks_directory: Some(root.join("archive/tasks")),
             archive_notes_directory: Some(root.join("archive/notes")),
             specs_directory: root.join("specs"),
             archive_specs_directory: Some(root.join("archive/specs")),
-            product_directory: None,
+            archive_directory: Some(root.join("archive")),
+            product_directory: Some(root.join("product")),
+            prompt_logs: Some(root.join("prompt-logs")),
+            library_directory: Some(root.join("library")),
+            sets_directory: Some(root.join("sets")),
+            tui: crate::models::config::TuiConfig {
+                pane_widths: Some(crate::models::config::PaneWidths::default()),
+            },
         }
     }
 

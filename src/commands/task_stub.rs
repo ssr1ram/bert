@@ -230,13 +230,21 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let config = crate::models::config::BertConfig {
             project_root: temp_dir.path().to_path_buf(),
+            bert_root: temp_dir.path().join("bert"),
             tasks_directory: temp_dir.path().join("tasks"),
-            notes_directory: None,
-            archive_tasks_directory: None,
-            archive_notes_directory: None,
+            notes_directory: Some(temp_dir.path().join("notes")),
+            archive_tasks_directory: Some(temp_dir.path().join("archive/tasks")),
+            archive_notes_directory: Some(temp_dir.path().join("archive/notes")),
             specs_directory: temp_dir.path().join("specs"),
-            archive_specs_directory: None,
-            product_directory: None,
+            archive_specs_directory: Some(temp_dir.path().join("archive/specs")),
+            archive_directory: Some(temp_dir.path().join("archive")),
+            product_directory: Some(temp_dir.path().join("product")),
+            prompt_logs: Some(temp_dir.path().join("prompt-logs")),
+            library_directory: Some(temp_dir.path().join("library")),
+            sets_directory: Some(temp_dir.path().join("sets")),
+            tui: crate::models::config::TuiConfig {
+                pane_widths: Some(crate::models::config::PaneWidths::default()),
+            },
         };
 
         // Create tasks directory and parent task
@@ -254,13 +262,21 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let config = crate::models::config::BertConfig {
             project_root: temp_dir.path().to_path_buf(),
+            bert_root: temp_dir.path().join("bert"),
             tasks_directory: temp_dir.path().join("tasks"),
-            notes_directory: None,
-            archive_tasks_directory: None,
-            archive_notes_directory: None,
+            notes_directory: Some(temp_dir.path().join("notes")),
+            archive_tasks_directory: Some(temp_dir.path().join("archive/tasks")),
+            archive_notes_directory: Some(temp_dir.path().join("archive/notes")),
             specs_directory: temp_dir.path().join("specs"),
-            archive_specs_directory: None,
-            product_directory: None,
+            archive_specs_directory: Some(temp_dir.path().join("archive/specs")),
+            archive_directory: Some(temp_dir.path().join("archive")),
+            product_directory: Some(temp_dir.path().join("product")),
+            prompt_logs: Some(temp_dir.path().join("prompt-logs")),
+            library_directory: Some(temp_dir.path().join("library")),
+            sets_directory: Some(temp_dir.path().join("sets")),
+            tui: crate::models::config::TuiConfig {
+                pane_widths: Some(crate::models::config::PaneWidths::default()),
+            },
         };
 
         fs::create_dir_all(&config.tasks_directory).unwrap();
@@ -278,13 +294,21 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let config = crate::models::config::BertConfig {
             project_root: temp_dir.path().to_path_buf(),
+            bert_root: temp_dir.path().join("bert"),
             tasks_directory: temp_dir.path().join("tasks"),
-            notes_directory: None,
-            archive_tasks_directory: None,
-            archive_notes_directory: None,
+            notes_directory: Some(temp_dir.path().join("notes")),
+            archive_tasks_directory: Some(temp_dir.path().join("archive/tasks")),
+            archive_notes_directory: Some(temp_dir.path().join("archive/notes")),
             specs_directory: temp_dir.path().join("specs"),
-            archive_specs_directory: None,
-            product_directory: None,
+            archive_specs_directory: Some(temp_dir.path().join("archive/specs")),
+            archive_directory: Some(temp_dir.path().join("archive")),
+            product_directory: Some(temp_dir.path().join("product")),
+            prompt_logs: Some(temp_dir.path().join("prompt-logs")),
+            library_directory: Some(temp_dir.path().join("library")),
+            sets_directory: Some(temp_dir.path().join("sets")),
+            tui: crate::models::config::TuiConfig {
+                pane_widths: Some(crate::models::config::PaneWidths::default()),
+            },
         };
 
         fs::create_dir_all(&config.tasks_directory).unwrap();
@@ -301,13 +325,21 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let config = crate::models::config::BertConfig {
             project_root: temp_dir.path().to_path_buf(),
+            bert_root: temp_dir.path().join("bert"),
             tasks_directory: temp_dir.path().join("tasks"),
-            notes_directory: None,
-            archive_tasks_directory: None,
-            archive_notes_directory: None,
+            notes_directory: Some(temp_dir.path().join("notes")),
+            archive_tasks_directory: Some(temp_dir.path().join("archive/tasks")),
+            archive_notes_directory: Some(temp_dir.path().join("archive/notes")),
             specs_directory: temp_dir.path().join("specs"),
-            archive_specs_directory: None,
-            product_directory: None,
+            archive_specs_directory: Some(temp_dir.path().join("archive/specs")),
+            archive_directory: Some(temp_dir.path().join("archive")),
+            product_directory: Some(temp_dir.path().join("product")),
+            prompt_logs: Some(temp_dir.path().join("prompt-logs")),
+            library_directory: Some(temp_dir.path().join("library")),
+            sets_directory: Some(temp_dir.path().join("sets")),
+            tui: crate::models::config::TuiConfig {
+                pane_widths: Some(crate::models::config::PaneWidths::default()),
+            },
         };
 
         fs::create_dir_all(&config.tasks_directory).unwrap();
@@ -322,13 +354,21 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let config = crate::models::config::BertConfig {
             project_root: temp_dir.path().to_path_buf(),
+            bert_root: temp_dir.path().join("bert"),
             tasks_directory: temp_dir.path().join("tasks"),
-            notes_directory: None,
-            archive_tasks_directory: None,
-            archive_notes_directory: None,
+            notes_directory: Some(temp_dir.path().join("notes")),
+            archive_tasks_directory: Some(temp_dir.path().join("archive/tasks")),
+            archive_notes_directory: Some(temp_dir.path().join("archive/notes")),
             specs_directory: temp_dir.path().join("specs"),
-            archive_specs_directory: None,
-            product_directory: None,
+            archive_specs_directory: Some(temp_dir.path().join("archive/specs")),
+            archive_directory: Some(temp_dir.path().join("archive")),
+            product_directory: Some(temp_dir.path().join("product")),
+            prompt_logs: Some(temp_dir.path().join("prompt-logs")),
+            library_directory: Some(temp_dir.path().join("library")),
+            sets_directory: Some(temp_dir.path().join("sets")),
+            tui: crate::models::config::TuiConfig {
+                pane_widths: Some(crate::models::config::PaneWidths::default()),
+            },
         };
 
         fs::create_dir_all(&config.tasks_directory).unwrap();
