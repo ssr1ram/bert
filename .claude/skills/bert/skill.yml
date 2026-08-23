@@ -2,7 +2,7 @@
 # Build, Execute, and Refine Tasks
 
 name: bert
-version: "0.2.1"
+version: "0.3.3"
 description: Task management system for creating, organizing, and tracking hierarchical tasks with arbitrary nesting depth
 
 # Compatibility metadata for Agent-OS harmony

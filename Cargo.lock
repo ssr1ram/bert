@@ -150,9 +150,8 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "bert-cli"
-version = "0.2.1"
+version = "0.3.3"
 dependencies = [
- "anyhow",
  "arboard",
  "assert_cmd",
  "chrono",
@@ -162,12 +161,12 @@ dependencies = [
  "ratatui",
  "regex",
  "serde",
+ "serde_json",
  "serde_yaml",
  "tempfile",
  "termbg",
  "thiserror 1.0.69",
  "tui-markdown",
- "walkdir",
 ]
 
 [[package]]

@@ -1,6 +1,6 @@
 # Bert - Build, Execute, and Refine Tasks
 
-## version 0.2.1
+## version 0.3.3
 
 Task management for Claude Code with optional spec-driven development, built-in review workflow, and Rust CLI.
 
@@ -121,6 +121,14 @@ bert task stub -p 3 "subtask under task 3"
 bert task archive 08              # Archive single task
 bert task archive 08 -r           # Archive with all children
 
+# List tasks (filters understand status synonyms: open≈todo, paused/deferred≈parked)
+bert task list                    # All tasks, aligned table + summary
+bert task list --status parked --track newsletter
+bert task list --priority p1 --json
+
+# Adopt an existing tasks directory's format into .bert/config.yml
+bert task adopt
+
 # Help
 bert --help
 bert task --help
@@ -130,7 +138,9 @@ bert task --help
 - **Rust CLI**: Quick task stub creation and archiving from command line
 - **Claude Code** (`/bert:task`): Full workflow with AI execution, review generation, status updates
 
-The CLI reads the same `skill.yml` configuration and works from any project subdirectory.
+The CLI is zero-config: it finds the repo root via git and puts tasks in `<repo_root>/docs/tasks`. Override via `.bert/config.yml` (same schema as the legacy `skills.yml`), the `--reporoot` / `--taskdir` flags, or a legacy `skills.yml` at the project root — all still honored.
+
+The CLI also tolerates existing task files in other conventions (e.g. bare `task-013.md` with rich frontmatter): it reads them all, and new stubs mimic whatever the directory already uses. `bert task adopt` pins the detected format into `.bert/config.yml`.
 
 ## Commands
 

@@ -2,6 +2,58 @@
 
 All notable changes are documented here.
 
+## [0.3.3] - 2026-08-23
+
+### Fixed
+- `spec archive` now uses the tolerant filename parser: finds bare-format parents (`task-013.md`) and grandchild recursion/notes lookup no longer break on bare-format children
+- `cargo test` is green again end-to-end: uncompilable `tests/sets_test.rs` removed (round-trip tests moved into `models/set.rs`); three integration tests updated from pre-zero-config expectations
+
+### Changed - Simplification pass (behavior-preserving)
+- Shared test fixture replaces 12 copies of the `BertConfig` literal
+- One directory-tree scanner shared by FileViewer and PromptBuilder; one expand-all walker; shared menu-item text between render and click hit-testing; `find_notes_file`/`find_task_file` shared across task/spec archive
+- Recursive archive scans each directory once instead of rescanning per descendant
+- `bert task adopt`, parent-stub numbering: single walk instead of two
+- Removed dead code: `command_selector.rs` (never compiled), `anyhow`/`walkdir` deps, write-only state fields, never-constructed `YamlError`, vestigial TUI parameter plumbing
+- TUI: prompt builder borrows config instead of cloning per frame/keypress; irrelevant mouse events drained instead of triggering redraws; input-mode editing without per-key enum clones
+- TOCTOU guards removed where the follow-up call already handled absence; `prompt_stub` keeps propagating real read errors via error-kind match
+
+## [0.3.2] - 2026-08-23
+
+### Changed - Flag Renaming
+- `--bert-dir` renamed to `--reporoot` (aliases: `--repo-root`, `--repodir`); overrides the repo root otherwise discovered via git
+- `--tasks-dir` renamed to `--taskdir` (aliases: `--task-dir`, hidden `--tasks-dir`)
+- No CLI option carries the "bert" name anymore
+
+## [0.3.1] - 2026-08-23
+
+### Changed - Self-Contained Zero-Config Layout
+- With no `config:` section, bert's entire footprint is the tasks directory: archive, notes, specs, prompts and product context now nest inside it (`docs/tasks/archive`, `docs/tasks/notes`, ...) instead of claiming sibling `docs/` names
+- An explicit `config:` section keeps the classic bert_root-derived layout unchanged
+
+## [0.3.0] - 2026-08-23
+
+### Added - Zero-Config Discovery & Format Tolerance
+
+**Project Discovery**
+- Repo root now found via git (`git rev-parse --show-toplevel`) instead of walking up for a config file
+- Zero-config mode: tasks default to `<repo_root>/docs/tasks`; no `skills.yml` required
+- Optional `.bert/config.yml` (dot-directory convention); legacy `skills.yml` still honored
+- New global flag: `--tasks-dir`, alongside existing `--bert-dir`
+
+**Format Tolerance**
+- Lenient task-filename parser: bare `task-013.md`, slugged `task-01-x.md`, and dotted subtasks all read
+- Numeric task-number matching (`bert task archive 7` finds `task-007.md`)
+- Status synonym normalization: open/pending→todo, in-progress→doing, paused/deferred→parked, done/completed→done
+- New stubs mimic the existing directory's filename shape, number padding, frontmatter keys, status word, and H1 style
+
+**New Commands**
+- `bert task adopt` — detect a tasks directory's conventions and persist them to `.bert/config.yml`
+- `bert task list` — filterable listing (`--status/--track/--priority/--tag`), aligned table or `--json`
+
+### Fixed
+- Stale `ProjectNotFound` error message referencing `.claude/skills/bert/skill.yml`
+- Binary now works in the bert repo itself (previously failed without a root `skills.yml`)
+
 ## [0.2.2] - 2025-10-26
 
 ### Added - Phase 1: Standards Adoption

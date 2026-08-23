@@ -9,14 +9,18 @@ The Bert Rust CLI (`bert` binary) is a standalone tool that complements the Clau
 ## Features (MVP)
 
 - **Task Stub Creation**: Quickly create minimal task stubs with universal numbering
+- **Task Listing**: `bert task list` with status/track/priority/tag filters; status synonyms are normalized (`open`/`pending` → todo, `paused`/`deferred` → parked) while files keep their own vocabulary; `--json` for machine consumption
 - **Task Archiving**: Archive tasks and associated notes recursively
-- **Project Root Detection**: Automatically finds bert projects by walking up directories
-- **Configuration**: Reads from `.claude/skills/bert/skill.yml`
+- **Project Root Detection**: Uses git (`git rev-parse --show-toplevel`); falls back to walking up for a config file, then to the current directory
+- **Configuration**: Zero-config by default (tasks at `<repo_root>/docs/tasks`); optional `.bert/config.yml`, legacy `skills.yml`, or `--reporoot` / `--taskdir` flags
+- **Self-Contained Footprint**: With zero-config, everything bert creates nests inside the tasks directory — `docs/tasks/{archive,notes,specs,prompts,product}` — claiming no other `docs/` names; explicit `config:` sections keep the classic `{bert_root}` layout
+- **Format Tolerance**: Reads any reasonable task-file convention (bare `task-013.md`, slugged `task-01-x.md`, dotted subtasks); new stubs mimic the existing directory's filename shape, padding, frontmatter keys, status vocabulary and H1 style
+- **`bert task adopt`**: Persist the detected format as a `format:` section in `.bert/config.yml` so writing is stable even in empty directories
 
 ## Prerequisites
 
-- Rust 1.70+ (stable)
-- A bert project (contains `.claude/skills/bert/skill.yml`)
+- Rust 1.88+ (the repo builds with 1.95)
+- Nothing else — bert works in any git repository with no setup; outside a git repo it treats the current directory as the project root
 
 ## Installation
 
@@ -111,7 +115,7 @@ The Rust CLI and Claude Code AI agents are **independent and complementary**:
 - **Rust CLI**: Handles mechanical operations (stubs, archiving) - fast, no AI needed
 - **AI Agents**: Handle intelligence operations (task execution, spec generation) - can work without CLI
 
-Both read from the same `skill.yml` configuration and work on the same file structure.
+Both share the same file conventions and work on the same file structure. The CLI discovers its configuration independently: git repo root → `.bert/config.yml` or legacy `skills.yml` at the root → defaults (`<repo_root>/docs/tasks`).
 
 ## License
 
