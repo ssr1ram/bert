@@ -1,5 +1,6 @@
 // Task archive command implementation
 use crate::errors::{BertError, Result};
+use crate::format;
 use crate::models::config::BertConfig;
 use crate::utils::normalize_task_number;
 use std::fs;
@@ -88,53 +89,48 @@ fn archive_with_children(config: &BertConfig, task_number: &str) -> Result<usize
 }
 
 /// Find all children (and grandchildren, etc.) of a task
+///
+/// Descendance is transitive, so one pass over the tasks directory
+/// yields every descendant; no per-child rescans needed.
 fn find_all_children(config: &BertConfig, parent_number: &str) -> Result<Vec<String>> {
-    let mut children = Vec::new();
-    // Normalize parent number (e.g., "1" -> "01")
-    let normalized = normalize_task_number(parent_number);
-    let pattern = format!("task-{}.", normalized);
-    let entries = fs::read_dir(&config.tasks_directory)?;
+    // Resolve the parent's on-disk spelling (handles any padding width)
+    let canonical = find_task_file(config, parent_number)
+        .ok()
+        .and_then(|path| {
+            path.file_name()
+                .and_then(|n| n.to_str())
+                .and_then(format::parse_task_filename)
+                .map(|p| p.number)
+        })
+        .unwrap_or_else(|| parent_number.to_string());
 
-    for entry in entries.flatten() {
-        if let Some(filename) = entry.file_name().to_str() {
-            if filename.starts_with(&pattern) && filename.ends_with(".md") {
-                // Extract the task number from filename
-                // e.g., "task-08.1-foo.md" -> "08.1"
-                if let Some(task_num_part) = filename
-                    .strip_prefix("task-")
-                    .and_then(|s| s.split('-').next())
-                {
-                    children.push(task_num_part.to_string());
+    let mut children: Vec<String> = fs::read_dir(&config.tasks_directory)?
+        .filter_map(|e| e.ok())
+        .filter_map(|entry| entry.file_name().to_str().map(String::from))
+        .filter_map(|filename| format::parse_task_filename(&filename))
+        .filter(|parsed| format::number_is_descendant(&parsed.number, &canonical))
+        .map(|parsed| parsed.number)
+        .collect();
 
-                    // Recursively find children of this child
-                    let grandchildren = find_all_children(config, task_num_part)?;
-                    children.extend(grandchildren);
-                }
-            }
-        }
-    }
-
-    // Remove duplicates and sort
     children.sort();
-    children.dedup();
 
     Ok(children)
 }
 
 /// Find task file by task number
 ///
+/// Matches by numeric value, so "13" finds `task-13-x.md`, `task-013.md`, etc.
 /// Returns PathBuf to the task file, or error if not found
-fn find_task_file(config: &BertConfig, task_number: &str) -> Result<PathBuf> {
-    // Normalize task number (e.g., "1" -> "01")
-    let normalized = normalize_task_number(task_number);
-    let pattern = format!("task-{}-", normalized);
+pub(crate) fn find_task_file(config: &BertConfig, task_number: &str) -> Result<PathBuf> {
     let entries = fs::read_dir(&config.tasks_directory)?;
 
     for entry in entries.flatten() {
         let path = entry.path();
         if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
-            if filename.starts_with(&pattern) && filename.ends_with(".md") {
-                return Ok(path);
+            if let Some(parsed) = format::parse_task_filename(filename) {
+                if format::number_matches(&parsed.number, task_number) {
+                    return Ok(path);
+                }
             }
         }
     }
@@ -145,12 +141,8 @@ fn find_task_file(config: &BertConfig, task_number: &str) -> Result<PathBuf> {
 /// Find notes file by task number
 ///
 /// Returns Some(PathBuf) if found, None if not found (not an error)
-fn find_notes_file(config: &BertConfig, task_number: &str) -> Option<PathBuf> {
+pub(crate) fn find_notes_file(config: &BertConfig, task_number: &str) -> Option<PathBuf> {
     let notes_dir = config.notes_directory.as_ref()?;
-
-    if !notes_dir.exists() {
-        return None;
-    }
 
     // Normalize task number (e.g., "1" -> "01")
     let normalized = normalize_task_number(task_number);
@@ -172,35 +164,14 @@ fn find_notes_file(config: &BertConfig, task_number: &str) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::config::test_support::test_config;
     use std::fs;
     use tempfile::TempDir;
-
-    fn create_test_config(temp_dir: &TempDir) -> BertConfig {
-        let root = temp_dir.path();
-        BertConfig {
-            project_root: root.to_path_buf(),
-            bert_root: root.join("bert"),
-            tasks_directory: root.join("tasks"),
-            notes_directory: Some(root.join("notes")),
-            archive_tasks_directory: Some(root.join("archive/tasks")),
-            archive_notes_directory: Some(root.join("archive/notes")),
-            specs_directory: root.join("specs"),
-            archive_specs_directory: Some(root.join("archive/specs")),
-            archive_directory: Some(root.join("archive")),
-            product_directory: Some(root.join("product")),
-            prompt_logs: Some(root.join("prompt-logs")),
-            library_directory: Some(root.join("library")),
-            sets_directory: Some(root.join("sets")),
-            tui: crate::models::config::TuiConfig {
-                pane_widths: Some(crate::models::config::PaneWidths::default()),
-            },
-        }
-    }
 
     #[test]
     fn test_find_task_file_success() {
         let temp_dir = TempDir::new().unwrap();
-        let config = create_test_config(&temp_dir);
+        let config = test_config(temp_dir.path());
 
         fs::create_dir_all(&config.tasks_directory).unwrap();
         fs::write(config.tasks_directory.join("task-08-test.md"), "test").unwrap();
@@ -212,7 +183,7 @@ mod tests {
     #[test]
     fn test_find_task_file_not_found() {
         let temp_dir = TempDir::new().unwrap();
-        let config = create_test_config(&temp_dir);
+        let config = test_config(temp_dir.path());
 
         fs::create_dir_all(&config.tasks_directory).unwrap();
 
@@ -224,7 +195,7 @@ mod tests {
     #[test]
     fn test_find_notes_file_exists() {
         let temp_dir = TempDir::new().unwrap();
-        let config = create_test_config(&temp_dir);
+        let config = test_config(temp_dir.path());
 
         fs::create_dir_all(config.notes_directory.as_ref().unwrap()).unwrap();
         fs::write(
@@ -239,7 +210,7 @@ mod tests {
     #[test]
     fn test_find_notes_file_not_exists() {
         let temp_dir = TempDir::new().unwrap();
-        let config = create_test_config(&temp_dir);
+        let config = test_config(temp_dir.path());
 
         fs::create_dir_all(config.notes_directory.as_ref().unwrap()).unwrap();
 
@@ -250,7 +221,7 @@ mod tests {
     #[test]
     fn test_archive_task_without_notes() {
         let temp_dir = TempDir::new().unwrap();
-        let config = create_test_config(&temp_dir);
+        let config = test_config(temp_dir.path());
 
         // Create task file
         fs::create_dir_all(&config.tasks_directory).unwrap();
@@ -269,7 +240,7 @@ mod tests {
     #[test]
     fn test_archive_task_with_notes() {
         let temp_dir = TempDir::new().unwrap();
-        let config = create_test_config(&temp_dir);
+        let config = test_config(temp_dir.path());
 
         // Create task and notes files
         fs::create_dir_all(&config.tasks_directory).unwrap();
@@ -298,7 +269,7 @@ mod tests {
     #[test]
     fn test_archive_subtask() {
         let temp_dir = TempDir::new().unwrap();
-        let config = create_test_config(&temp_dir);
+        let config = test_config(temp_dir.path());
 
         // Create subtask file
         fs::create_dir_all(&config.tasks_directory).unwrap();
@@ -317,7 +288,7 @@ mod tests {
     #[test]
     fn test_archive_with_children() {
         let temp_dir = TempDir::new().unwrap();
-        let config = create_test_config(&temp_dir);
+        let config = test_config(temp_dir.path());
 
         // Create parent and children
         fs::create_dir_all(&config.tasks_directory).unwrap();
@@ -345,7 +316,7 @@ mod tests {
     #[test]
     fn test_archive_with_grandchildren() {
         let temp_dir = TempDir::new().unwrap();
-        let config = create_test_config(&temp_dir);
+        let config = test_config(temp_dir.path());
 
         // Create nested hierarchy
         fs::create_dir_all(&config.tasks_directory).unwrap();
@@ -366,7 +337,7 @@ mod tests {
     #[test]
     fn test_archive_child_only_with_recursive() {
         let temp_dir = TempDir::new().unwrap();
-        let config = create_test_config(&temp_dir);
+        let config = test_config(temp_dir.path());
 
         // Create parent and children
         fs::create_dir_all(&config.tasks_directory).unwrap();
@@ -389,7 +360,7 @@ mod tests {
     #[test]
     fn test_archive_with_children_and_notes() {
         let temp_dir = TempDir::new().unwrap();
-        let config = create_test_config(&temp_dir);
+        let config = test_config(temp_dir.path());
 
         // Create parent and children with notes
         fs::create_dir_all(&config.tasks_directory).unwrap();
@@ -416,5 +387,22 @@ mod tests {
             .join("note-08-parent-notes.md").exists());
         assert!(!config.notes_directory.as_ref().unwrap()
             .join("note-08.1-child-notes.md").exists());
+    }
+
+    #[test]
+    fn test_find_notes_file_pads_unpadded_task_number() {
+        let temp_dir = TempDir::new().unwrap();
+        let config = test_config(temp_dir.path());
+
+        fs::create_dir_all(config.notes_directory.as_ref().unwrap()).unwrap();
+        fs::write(
+            config.notes_directory.as_ref().unwrap().join("note-08-notes.md"),
+            "notes",
+        )
+        .unwrap();
+
+        // "8" must normalize to "08" to find the canonically-padded note
+        let found = find_notes_file(&config, "8").unwrap();
+        assert!(found.ends_with("note-08-notes.md"));
     }
 }

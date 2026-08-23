@@ -1,7 +1,7 @@
 //! Prompt set data model and serialization
 
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use chrono::{DateTime, Utc};
 
 /// A saved prompt set containing a collection of file paths
@@ -45,7 +45,7 @@ impl PromptSet {
     }
 
     /// Load a set from a YAML file
-    pub fn from_file(path: &PathBuf) -> crate::errors::Result<Self> {
+    pub fn from_file(path: &Path) -> crate::errors::Result<Self> {
         let content = std::fs::read_to_string(path)?;
         let set: PromptSet = serde_yaml::from_str(&content)
             .map_err(|e| crate::errors::BertError::ConfigError(format!("Failed to parse set: {}", e)))?;
@@ -53,7 +53,7 @@ impl PromptSet {
     }
 
     /// Save the set to a YAML file
-    pub fn save(&self, sets_dir: &PathBuf) -> crate::errors::Result<PathBuf> {
+    pub fn save(&self, sets_dir: &Path) -> crate::errors::Result<PathBuf> {
         // Ensure sets directory exists
         std::fs::create_dir_all(sets_dir)?;
 
@@ -66,17 +66,17 @@ impl PromptSet {
     }
 
     /// Delete the set file
-    pub fn delete(sets_dir: &PathBuf, name: &str) -> crate::errors::Result<()> {
+    pub fn delete(sets_dir: &Path, name: &str) -> crate::errors::Result<()> {
         let file_path = sets_dir.join(format!("{}.yaml", name));
         std::fs::remove_file(file_path)?;
         Ok(())
     }
 
     /// Rename a set
-    pub fn rename(sets_dir: &PathBuf, old_name: &str, new_name: &str) -> crate::errors::Result<()> {
+    pub fn rename(sets_dir: &Path, old_name: &str, new_name: &str) -> crate::errors::Result<()> {
         // Validate new name
         Self::validate_name(new_name)
-            .map_err(|e| crate::errors::BertError::ConfigError(e))?;
+            .map_err(crate::errors::BertError::ConfigError)?;
 
         let old_path = sets_dir.join(format!("{}.yaml", old_name));
         let new_path = sets_dir.join(format!("{}.yaml", new_name));
@@ -101,6 +101,7 @@ impl PromptSet {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::TempDir;
 
     #[test]
     fn test_validate_name_valid() {
@@ -131,5 +132,73 @@ mod tests {
 
         assert_eq!(set.name, "test-set");
         assert_eq!(set.files, files);
+    }
+
+    #[test]
+    fn test_save_and_load_roundtrip() {
+        let temp_dir = TempDir::new().unwrap();
+        let sets_dir = temp_dir.path().to_path_buf();
+
+        let files = vec![
+            PathBuf::from("file1.md"),
+            PathBuf::from("folder/file2.md"),
+        ];
+        let set = PromptSet::new("test-set".to_string(), files.clone());
+
+        let saved_path = set.save(&sets_dir).unwrap();
+        assert!(saved_path.exists());
+
+        let loaded_set = PromptSet::from_file(&saved_path).unwrap();
+        assert_eq!(loaded_set.name, "test-set");
+        assert_eq!(loaded_set.files, files);
+    }
+
+    #[test]
+    fn test_delete_set() {
+        let temp_dir = TempDir::new().unwrap();
+        let sets_dir = temp_dir.path().to_path_buf();
+
+        let files = vec![PathBuf::from("file1.md")];
+        let set = PromptSet::new("delete-me".to_string(), files);
+        let saved_path = set.save(&sets_dir).unwrap();
+        assert!(saved_path.exists());
+
+        PromptSet::delete(&sets_dir, "delete-me").unwrap();
+        assert!(!saved_path.exists());
+    }
+
+    #[test]
+    fn test_rename_set() {
+        let temp_dir = TempDir::new().unwrap();
+        let sets_dir = temp_dir.path().to_path_buf();
+
+        let files = vec![PathBuf::from("file1.md")];
+        let set = PromptSet::new("old-name".to_string(), files.clone());
+        set.save(&sets_dir).unwrap();
+
+        PromptSet::rename(&sets_dir, "old-name", "new-name").unwrap();
+
+        let old_path = sets_dir.join("old-name.yaml");
+        assert!(!old_path.exists());
+
+        let new_path = sets_dir.join("new-name.yaml");
+        assert!(new_path.exists());
+
+        let loaded_set = PromptSet::from_file(&new_path).unwrap();
+        assert_eq!(loaded_set.name, "new-name");
+        assert_eq!(loaded_set.files, files);
+    }
+
+    #[test]
+    fn test_rename_set_conflict() {
+        let temp_dir = TempDir::new().unwrap();
+        let sets_dir = temp_dir.path().to_path_buf();
+
+        let files = vec![PathBuf::from("file1.md")];
+        PromptSet::new("set1".to_string(), files.clone()).save(&sets_dir).unwrap();
+        PromptSet::new("set2".to_string(), files).save(&sets_dir).unwrap();
+
+        // Renaming set1 onto existing set2 must fail
+        assert!(PromptSet::rename(&sets_dir, "set1", "set2").is_err());
     }
 }

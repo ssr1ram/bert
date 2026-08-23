@@ -4,6 +4,8 @@ use super::{events, prompt_builder, settings, state::{AppState, Mode, ActivePane
 use crate::models::config::BertConfig;
 use crate::errors::Result;
 use crossterm::event::KeyCode;
+use std::collections::HashSet;
+use std::path::Path;
 use std::path::PathBuf;
 
 pub struct App {
@@ -12,18 +14,18 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(config: BertConfig, command: Option<String>) -> Result<Self> {
+    pub fn new(config: BertConfig) -> Result<Self> {
         Ok(App {
             config,
-            state: AppState::new(command),
+            state: AppState::new(),
         })
     }
 
     pub fn run(&mut self, terminal: &mut Tui) -> Result<()> {
         while !self.state.should_quit {
-            // Draw UI
-            let config = self.config.clone();
-            terminal.draw(|f| ui::render(f, &mut self.state, &config))?;
+            // Draw UI (split-borrow so no config clone per frame)
+            let App { config, state } = self;
+            terminal.draw(|f| ui::render(f, state, config))?;
 
             // Handle events
             if let Some(event) = events::read_event()? {
@@ -180,7 +182,6 @@ impl App {
 
                 Mode::PromptBuilder(crate::tui::v1::state::PromptBuilderState {
                     view: View::Library,
-                    current_path: PathBuf::new(),
                     cursor: 0,
                     build_queue: Vec::new(),
                     active_pane: ActivePane::Explorer,
@@ -193,19 +194,16 @@ impl App {
                 })
             }
             MenuItem::Spec => Mode::SpecViewer(crate::tui::v1::state::TreeViewerState {
-                current_path: PathBuf::new(),
                 cursor: 0,
                 expanded_folders: HashSet::new(),
                 selected_file: None,
             }),
             MenuItem::Task => Mode::TaskViewer(crate::tui::v1::state::TreeViewerState {
-                current_path: PathBuf::new(),
                 cursor: 0,
                 expanded_folders: HashSet::new(),
                 selected_file: None,
             }),
             MenuItem::Archive => Mode::ArchiveViewer(crate::tui::v1::state::TreeViewerState {
-                current_path: PathBuf::new(),
                 cursor: 0,
                 expanded_folders: HashSet::new(),
                 selected_file: None,
@@ -340,7 +338,7 @@ impl App {
             }
             KeyCode::Char('E') => {
                 // Expand all folders
-                Self::expand_all_folders_static(state, root_dir)?;
+                Self::expand_all_folders(&mut state.expanded_folders, root_dir)?;
             }
             KeyCode::Char('C') => {
                 // Collapse all folders
@@ -352,11 +350,8 @@ impl App {
         Ok(())
     }
 
-    /// Helper function to expand all folders recursively
-    fn expand_all_folders_static(
-        state: &mut crate::tui::v1::state::TreeViewerState,
-        root_dir: &PathBuf,
-    ) -> Result<()> {
+    /// Expand every folder under `root_dir`, BFS from the directory root.
+    fn expand_all_folders(expanded: &mut HashSet<PathBuf>, root_dir: &Path) -> Result<()> {
         use std::collections::VecDeque;
 
         if !root_dir.exists() {
@@ -374,7 +369,7 @@ impl App {
                     if entry.path().is_dir() {
                         let name = entry.file_name().to_string_lossy().to_string();
                         let folder_path = relative_path.join(&name);
-                        state.expanded_folders.insert(folder_path.clone());
+                        expanded.insert(folder_path.clone());
                         to_visit.push_back(folder_path);
                     }
                 }
@@ -386,71 +381,54 @@ impl App {
 
     fn handle_prompt_builder_key(&mut self, key: KeyCode) -> Result<()> {
         if let Mode::PromptBuilder(ref mut state) = self.state.mode {
-            let builder = prompt_builder::PromptBuilder::new(self.config.clone());
+            let builder = prompt_builder::PromptBuilder::new(&self.config);
 
             // Handle input mode first (for save/rename operations)
-            if let Some(ref mut input_mode) = state.input_mode.clone() {
+            if matches!(key, KeyCode::Esc) {
+                // Cancel input
+                state.input_mode = None;
+                return Ok(());
+            }
+
+            if matches!(key, KeyCode::Enter) {
+                // Take the mode so side effects run without the borrow held
+                match state.input_mode.take() {
+                    Some(crate::tui::v1::state::InputMode::SaveSet { buffer }) => {
+                        if !buffer.is_empty() {
+                            let _ = builder.save_set(&state, &buffer);
+                        }
+                    }
+                    Some(crate::tui::v1::state::InputMode::RenameSet { old_name, buffer }) => {
+                        if !buffer.is_empty() {
+                            let _ = builder.rename_set(&old_name, &buffer);
+                        }
+                    }
+                    _ => {}
+                }
+                return Ok(());
+            }
+
+            if let Some(input_mode) = state.input_mode.as_mut() {
                 match key {
                     KeyCode::Char(c) => {
-                        // Add character to buffer
                         match input_mode {
-                            crate::tui::v1::state::InputMode::SaveSet { ref mut buffer } => {
+                            crate::tui::v1::state::InputMode::SaveSet { buffer }
+                            | crate::tui::v1::state::InputMode::RenameSet { buffer, .. } => {
                                 buffer.push(c);
-                                state.input_mode = Some(input_mode.clone());
-                            }
-                            crate::tui::v1::state::InputMode::RenameSet { ref old_name, ref mut buffer } => {
-                                buffer.push(c);
-                                state.input_mode = Some(crate::tui::v1::state::InputMode::RenameSet {
-                                    old_name: old_name.clone(),
-                                    buffer: buffer.clone(),
-                                });
                             }
                         }
                         return Ok(());
                     }
                     KeyCode::Backspace => {
-                        // Remove last character
                         match input_mode {
-                            crate::tui::v1::state::InputMode::SaveSet { ref mut buffer } => {
+                            crate::tui::v1::state::InputMode::SaveSet { buffer }
+                            | crate::tui::v1::state::InputMode::RenameSet { buffer, .. } => {
                                 buffer.pop();
-                                state.input_mode = Some(input_mode.clone());
-                            }
-                            crate::tui::v1::state::InputMode::RenameSet { ref old_name, ref mut buffer } => {
-                                buffer.pop();
-                                state.input_mode = Some(crate::tui::v1::state::InputMode::RenameSet {
-                                    old_name: old_name.clone(),
-                                    buffer: buffer.clone(),
-                                });
                             }
                         }
                         return Ok(());
                     }
-                    KeyCode::Enter => {
-                        // Submit input
-                        match input_mode {
-                            crate::tui::v1::state::InputMode::SaveSet { buffer } => {
-                                if !buffer.is_empty() {
-                                    let _ = builder.save_set(&state, &buffer);
-                                }
-                                state.input_mode = None;
-                            }
-                            crate::tui::v1::state::InputMode::RenameSet { old_name, buffer } => {
-                                if !buffer.is_empty() {
-                                    let _ = builder.rename_set(&old_name, &buffer);
-                                }
-                                state.input_mode = None;
-                            }
-                        }
-                        return Ok(());
-                    }
-                    KeyCode::Esc => {
-                        // Cancel input
-                        state.input_mode = None;
-                        return Ok(());
-                    }
-                    _ => {
-                        return Ok(());
-                    }
+                    _ => return Ok(()),
                 }
             }
 
@@ -468,8 +446,7 @@ impl App {
                         View::Sets => View::Library,
                     };
                     state.cursor = 0;
-                    state.current_path = PathBuf::new();
-                    return Ok(());
+                        return Ok(());
                 }
                 KeyCode::Tab => {
                     // Move to next pane (right)
@@ -619,7 +596,7 @@ impl App {
                             // Expand all folders (Library view only)
                             if matches!(state.view, View::Library) {
                                 if let Some(library_dir) = self.config.library_directory.clone() {
-                                    Self::expand_all_folders_prompt_builder_static(state, &library_dir)?;
+                                    Self::expand_all_folders(&mut state.expanded_folders, &library_dir)?;
                                 }
                             }
                         }
@@ -705,37 +682,7 @@ impl App {
         Ok(())
     }
 
-    /// Expand all folders in the prompt builder
-    fn expand_all_folders_prompt_builder_static(
-        state: &mut crate::tui::v1::state::PromptBuilderState,
-        library_dir: &PathBuf,
-    ) -> Result<()> {
-        use std::collections::VecDeque;
 
-        if !library_dir.exists() {
-            return Ok(());
-        }
-
-        let mut to_visit = VecDeque::new();
-        to_visit.push_back(PathBuf::new());
-
-        while let Some(relative_path) = to_visit.pop_front() {
-            let full_path = library_dir.join(&relative_path);
-
-            if let Ok(entries) = std::fs::read_dir(&full_path) {
-                for entry in entries.filter_map(|e| e.ok()) {
-                    if entry.path().is_dir() {
-                        let name = entry.file_name().to_string_lossy().to_string();
-                        let folder_path = relative_path.join(&name);
-                        state.expanded_folders.insert(folder_path.clone());
-                        to_visit.push_back(folder_path);
-                    }
-                }
-            }
-        }
-
-        Ok(())
-    }
 
     fn handle_settings_key(&mut self, key: KeyCode) -> Result<()> {
         match key {
@@ -802,7 +749,7 @@ impl App {
         use super::prompt_builder::PromptBuilder;
 
         if let Mode::PromptBuilder(ref mut state) = self.state.mode {
-            let builder = PromptBuilder::new(self.config.clone());
+            let builder = PromptBuilder::new(&self.config);
 
             // Get items based on current view
             let tree_items = match state.view {
@@ -981,12 +928,8 @@ impl App {
         let mut current_x = start_offset;
 
         for (i, name) in item_names.iter().enumerate() {
-            // Format: "  N. Name  " or " [N. Name] "
-            let item_width = if menu_items[i] == self.state.active_menu {
-                format!(" [{}. {}] ", i + 1, name).len() as u16
-            } else {
-                format!("  {}. {}  ", i + 1, name).len() as u16
-            };
+            let is_active = menu_items[i] == self.state.active_menu;
+            let item_width = super::menu::item_text(i, name, is_active).len() as u16;
 
             // Check if click is within this item
             if relative_x >= current_x && relative_x < current_x + item_width {

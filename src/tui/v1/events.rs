@@ -12,7 +12,11 @@ pub enum AppEvent {
 }
 
 pub fn read_event() -> Result<Option<AppEvent>> {
-    if event::poll(Duration::from_millis(100))? {
+    loop {
+        if !event::poll(Duration::from_millis(100))? {
+            return Ok(Some(AppEvent::Tick));
+        }
+
         match event::read()? {
             Event::Key(key) => {
                 // Handle common quit keys
@@ -26,19 +30,16 @@ pub fn read_event() -> Result<Option<AppEvent>> {
                     return Ok(Some(AppEvent::Quit));
                 }
 
-                Ok(Some(AppEvent::Key(key)))
+                return Ok(Some(AppEvent::Key(key)));
             }
             Event::Mouse(mouse) => {
-                // Only process mouse button press events
+                // Only mouse button presses matter; drain everything else
+                // (moves, drags, releases) instead of redrawing per event.
                 if matches!(mouse.kind, MouseEventKind::Down(_)) {
-                    Ok(Some(AppEvent::Mouse(mouse)))
-                } else {
-                    Ok(None)
+                    return Ok(Some(AppEvent::Mouse(mouse)));
                 }
             }
-            _ => Ok(None),
+            _ => {}
         }
-    } else {
-        Ok(Some(AppEvent::Tick))
     }
 }

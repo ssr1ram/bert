@@ -50,7 +50,7 @@ pub fn create_spec_stub(config: &BertConfig, description: &str) -> Result<(Strin
     let requirements_content = generate_requirements_template(&spec_number, description);
     fs::write(dirpath.join("requirements.md"), requirements_content)?;
 
-    Ok((spec_number.clone(), dirpath.display().to_string()))
+    Ok((spec_number, dirpath.display().to_string()))
 }
 
 /// Generate a short slug (5-6 chars max) from description

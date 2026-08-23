@@ -5,8 +5,7 @@ use super::state::{PromptBuilderState, ActivePane, View};
 use crate::models::config::BertConfig;
 use crate::errors::Result;
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::io::Read;
+use std::path::PathBuf;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
@@ -30,14 +29,13 @@ pub enum TreeItemType {
     File,
 }
 
-// Keep the old enum for backward compatibility during refactor
 #[derive(Debug, Clone)]
-pub struct PromptBuilder {
-    config: BertConfig,
+pub struct PromptBuilder<'a> {
+    config: &'a BertConfig,
 }
 
-impl PromptBuilder {
-    pub fn new(config: BertConfig) -> Self {
+impl<'a> PromptBuilder<'a> {
+    pub fn new(config: &'a BertConfig) -> Self {
         Self { config }
     }
 
@@ -54,77 +52,7 @@ impl PromptBuilder {
             return Ok(Vec::new());
         }
 
-        let mut items = Vec::new();
-        self.scan_directory_recursive(library_dir, &PathBuf::new(), 0, expanded_folders, &mut items)?;
-
-        Ok(items)
-    }
-
-    /// Recursively scan a directory and add items to the tree
-    fn scan_directory_recursive(
-        &self,
-        library_root: &Path,
-        relative_path: &Path,
-        depth: usize,
-        expanded_folders: &std::collections::HashSet<PathBuf>,
-        items: &mut Vec<TreeItem>,
-    ) -> Result<()> {
-        let full_path = library_root.join(relative_path);
-
-        let mut entries: Vec<_> = fs::read_dir(&full_path)?
-            .filter_map(|e| e.ok())
-            .collect();
-
-        // Sort: folders first, then files, alphabetically
-        entries.sort_by(|a, b| {
-            let a_is_dir = a.path().is_dir();
-            let b_is_dir = b.path().is_dir();
-
-            match (a_is_dir, b_is_dir) {
-                (true, false) => std::cmp::Ordering::Less,
-                (false, true) => std::cmp::Ordering::Greater,
-                _ => a.file_name().cmp(&b.file_name()),
-            }
-        });
-
-        for entry in entries {
-            let path = entry.path();
-            let name = entry.file_name().to_string_lossy().to_string();
-            let item_relative_path = relative_path.join(&name);
-
-            if path.is_dir() {
-                let is_expanded = expanded_folders.contains(&item_relative_path);
-
-                items.push(TreeItem {
-                    path: item_relative_path.clone(),
-                    display_name: name.clone(),
-                    depth,
-                    item_type: TreeItemType::Folder,
-                    is_expanded,
-                });
-
-                // If expanded, recursively scan children
-                if is_expanded {
-                    self.scan_directory_recursive(
-                        library_root,
-                        &item_relative_path,
-                        depth + 1,
-                        expanded_folders,
-                        items,
-                    )?;
-                }
-            } else if path.is_file() {
-                items.push(TreeItem {
-                    path: item_relative_path,
-                    display_name: name,
-                    depth,
-                    item_type: TreeItemType::File,
-                    is_expanded: false,
-                });
-            }
-        }
-
-        Ok(())
+        super::tree_scan::scan_directory_tree(library_dir, expanded_folders, |p| p.is_file())
     }
 
     /// Remove item from build queue by index
@@ -223,7 +151,7 @@ impl PromptBuilder {
 
         // Validate name
         PromptSet::validate_name(set_name)
-            .map_err(|e| crate::errors::BertError::ConfigError(e))?;
+            .map_err(crate::errors::BertError::ConfigError)?;
 
         let sets_dir = self.config.sets_directory
             .as_ref()
@@ -332,7 +260,7 @@ pub fn render(f: &mut Frame, area: Rect, state: &mut PromptBuilderState, config:
     state.pane_areas = Some((content_chunks[0], content_chunks[1], content_chunks[2]));
 
     // Render panes
-    let builder = PromptBuilder::new(config.clone());
+    let builder = PromptBuilder::new(config);
 
     // Get items based on current view (Library or Sets)
     let tree_items = match state.view {
@@ -598,9 +526,7 @@ fn render_preview_pane(
                 // Read and display file content (Library view)
                 if let Some(library_dir) = &builder.config.library_directory {
                     let full_path = library_dir.join(&item.path);
-                    if let Ok(mut file) = std::fs::File::open(full_path) {
-                        let mut content = String::new();
-                        if file.read_to_string(&mut content).is_ok() {
+                    if let Ok(content) = std::fs::read_to_string(full_path) {
                             match preview_mode {
                                 super::state::PreviewMode::Raw => {
                                     // Show raw text
@@ -636,7 +562,6 @@ fn render_preview_pane(
                             }
                         }
                     }
-                }
             }
             TreeItemType::Folder => {
                 // Show folder info

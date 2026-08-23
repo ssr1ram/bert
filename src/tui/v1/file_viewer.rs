@@ -5,8 +5,7 @@ use super::prompt_builder::{TreeItem, TreeItemType};
 use super::state::{TreeViewerState, PreviewMode};
 use crate::errors::Result;
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::io::Read;
+use std::path::PathBuf;
 use std::collections::HashSet;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -29,83 +28,16 @@ impl FileViewer {
         }
     }
 
-    /// Scan directory and build tree structure
+    /// Scan directory and build tree structure (markdown files only)
     pub fn scan_tree(&self, expanded_folders: &HashSet<PathBuf>) -> Result<Vec<TreeItem>> {
         if !self.root_directory.exists() {
             fs::create_dir_all(&self.root_directory)?;
             return Ok(Vec::new());
         }
 
-        let mut items = Vec::new();
-        self.scan_directory_recursive(&self.root_directory, &PathBuf::new(), 0, expanded_folders, &mut items)?;
-
-        Ok(items)
-    }
-
-    fn scan_directory_recursive(
-        &self,
-        root: &Path,
-        relative_path: &Path,
-        depth: usize,
-        expanded_folders: &HashSet<PathBuf>,
-        items: &mut Vec<TreeItem>,
-    ) -> Result<()> {
-        let full_path = root.join(relative_path);
-
-        let mut entries: Vec<_> = fs::read_dir(&full_path)?
-            .filter_map(|e| e.ok())
-            .collect();
-
-        // Sort: folders first, then files, alphabetically
-        entries.sort_by(|a, b| {
-            let a_is_dir = a.path().is_dir();
-            let b_is_dir = b.path().is_dir();
-
-            match (a_is_dir, b_is_dir) {
-                (true, false) => std::cmp::Ordering::Less,
-                (false, true) => std::cmp::Ordering::Greater,
-                _ => a.file_name().cmp(&b.file_name()),
-            }
-        });
-
-        for entry in entries {
-            let path = entry.path();
-            let name = entry.file_name().to_string_lossy().to_string();
-            let item_relative_path = relative_path.join(&name);
-
-            if path.is_dir() {
-                let is_expanded = expanded_folders.contains(&item_relative_path);
-
-                items.push(TreeItem {
-                    path: item_relative_path.clone(),
-                    display_name: name.clone(),
-                    depth,
-                    item_type: TreeItemType::Folder,
-                    is_expanded,
-                });
-
-                // If expanded, recursively scan children
-                if is_expanded {
-                    self.scan_directory_recursive(
-                        root,
-                        &item_relative_path,
-                        depth + 1,
-                        expanded_folders,
-                        items,
-                    )?;
-                }
-            } else if path.extension().map_or(false, |ext| ext == "md") {
-                items.push(TreeItem {
-                    path: item_relative_path,
-                    display_name: name,
-                    depth,
-                    item_type: TreeItemType::File,
-                    is_expanded: false,
-                });
-            }
-        }
-
-        Ok(())
+        super::tree_scan::scan_directory_tree(&self.root_directory, expanded_folders, |p| {
+            p.extension().map_or(false, |ext| ext == "md")
+        })
     }
 }
 
@@ -231,9 +163,7 @@ fn render_preview(
             TreeItemType::File => {
                 // Read and display file content
                 let full_path = viewer.root_directory.join(&item.path);
-                if let Ok(mut file) = std::fs::File::open(full_path) {
-                    let mut content = String::new();
-                    if file.read_to_string(&mut content).is_ok() {
+                if let Ok(content) = std::fs::read_to_string(full_path) {
                         match preview_mode {
                             PreviewMode::Raw => {
                                 // Show raw text
@@ -268,7 +198,6 @@ fn render_preview(
                             }
                         }
                     }
-                }
             }
             TreeItemType::Folder => {
                 let expanded_text = if item.is_expanded { "expanded" } else { "collapsed" };

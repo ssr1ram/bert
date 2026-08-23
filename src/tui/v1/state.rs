@@ -66,7 +66,6 @@ pub enum Mode {
 /// Generic tree viewer state for browsing files
 #[derive(Debug, Clone, PartialEq)]
 pub struct TreeViewerState {
-    pub current_path: PathBuf,
     pub cursor: usize,
     pub expanded_folders: HashSet<PathBuf>,
     pub selected_file: Option<PathBuf>,
@@ -75,7 +74,6 @@ pub struct TreeViewerState {
 #[derive(Debug, Clone, PartialEq)]
 pub struct PromptBuilderState {
     pub view: View,
-    pub current_path: PathBuf,
     pub cursor: usize,
     pub build_queue: Vec<BuildItem>,
     pub active_pane: ActivePane,
@@ -124,7 +122,7 @@ pub enum BuildItemType {
 }
 
 impl AppState {
-    pub fn new(_direct_command: Option<String>) -> Self {
+    pub fn new() -> Self {
         // Start with top-level folders expanded by default
         let mut expanded_folders = HashSet::new();
         // Expand common top-level folder names
@@ -137,7 +135,6 @@ impl AppState {
         // Always start with Prompt Builder view
         let mode = Mode::PromptBuilder(PromptBuilderState {
             view: View::Library,
-            current_path: PathBuf::new(),
             cursor: 0,
             build_queue: Vec::new(),
             active_pane: ActivePane::Explorer,

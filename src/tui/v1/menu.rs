@@ -26,12 +26,7 @@ pub fn render(f: &mut Frame, area: ratatui::layout::Rect, active_menu: MenuItem,
                 colors.normal_text_style()
             };
 
-            let number = i + 1;
-            let text = if is_active {
-                format!(" [{}. {}] ", number, item.as_str())
-            } else {
-                format!("  {}. {}  ", number, item.as_str())
-            };
+            let text = item_text(i, item.as_str(), is_active);
 
             let mut result = vec![Span::styled(text, style)];
 
@@ -54,4 +49,14 @@ pub fn render(f: &mut Frame, area: ratatui::layout::Rect, active_menu: MenuItem,
         .style(Style::default().add_modifier(Modifier::BOLD));
 
     f.render_widget(menu, area);
+}
+
+/// Rendered text for one menu item; shared by the renderer and click hit-testing
+/// so the two can never drift apart.
+pub fn item_text(index: usize, name: &str, active: bool) -> String {
+    if active {
+        format!(" [{}. {}] ", index + 1, name)
+    } else {
+        format!("  {}. {}  ", index + 1, name)
+    }
 }

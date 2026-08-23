@@ -21,15 +21,14 @@ mod v1;
 /// # Examples
 /// ```
 /// // Launch command selector
-/// tui::launch(&config, None)?;
+/// tui::launch(&config)?;
 ///
 /// // Launch directly to prompt builder
-/// tui::launch(&config, Some("prompt"))?;
 /// ```
-pub fn launch(config: &BertConfig, command: Option<&str>) -> Result<()> {
+pub fn launch(config: &BertConfig) -> Result<()> {
     // Route to active implementation
     // Change this line to switch implementations
-    v1::launch(config, command)
+    v1::launch(config)
 
     // To use v2 in the future:
     // v2::launch(config, command)

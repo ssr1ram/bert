@@ -1,12 +1,14 @@
 // Task stub command implementation
 use crate::errors::{BertError, Result};
+use crate::format::{self, FormatProfile};
 use crate::models::config::BertConfig;
 use crate::numbering::find_next_number;
-use crate::utils::normalize_task_number;
-use chrono::Local;
 use std::fs;
 
 /// Create a new task stub file
+///
+/// The filename shape, number padding, frontmatter keys and status word mimic
+/// the existing tasks directory (see [`format::detect_profile`]).
 ///
 /// # Arguments
 ///
@@ -26,30 +28,35 @@ pub fn create_task_stub(
         return Err(BertError::InvalidInput("Description cannot be empty".to_string()));
     }
 
+    let profile = format::apply_overrides(
+        format::detect_profile(&config.tasks_directory),
+        config.format.as_ref(),
+    );
+
     // Determine task number based on parent
     let task_number = if let Some(parent_num) = parent {
-        // Validate parent exists
-        validate_parent_exists(config, parent_num)?;
-
-        // Find next sibling number
-        find_next_sibling(config, parent_num)?
+        // One directory pass validates the parent (returning its canonical
+        // on-disk form) and computes the next sibling slot under it
+        find_next_sibling_under_parent(config, parent_num)?
     } else {
-        // Get next top-level task number
+        // Get next top-level task number (width-aware)
         find_next_number(config)?
     };
 
-    // Generate slug from description
-    let slug = generate_slug(description);
-
-    // Construct filename
-    let filename = format!("task-{}-{}.md", task_number, slug);
+    // Construct filename following the directory's convention
+    let filename = if profile.use_slug {
+        let slug = generate_task_slug(description);
+        format!("task-{}-{}.md", task_number, slug)
+    } else {
+        format!("task-{}.md", task_number)
+    };
     let filepath = config.tasks_directory.join(&filename);
 
     // Ensure tasks directory exists
     fs::create_dir_all(&config.tasks_directory)?;
 
     // Generate task content
-    let content = generate_task_template(&task_number, description);
+    let content = generate_task_template(&profile, &task_number, description);
 
     // Write file
     fs::write(&filepath, content)?;
@@ -66,7 +73,7 @@ pub fn create_task_stub(
 /// - Collapse multiple hyphens into one
 /// - Trim hyphens from start and end
 /// - Limit to 50 characters
-fn generate_slug(description: &str) -> String {
+fn generate_task_slug(description: &str) -> String {
     let mut slug = description.to_lowercase();
 
     // Replace spaces and underscores with hyphens
@@ -95,79 +102,71 @@ fn generate_slug(description: &str) -> String {
     slug
 }
 
-/// Validate that parent task exists in tasks directory
-fn validate_parent_exists(config: &BertConfig, parent: &str) -> Result<()> {
-    let entries = fs::read_dir(&config.tasks_directory)?;
-    // Normalize parent number (e.g., "1" -> "01")
-    let normalized = normalize_task_number(parent);
-    let pattern = format!("task-{}-", normalized);
-
-    for entry in entries.flatten() {
-        if let Some(filename) = entry.file_name().to_str() {
-            if filename.starts_with(&pattern) && filename.ends_with(".md") {
-                return Ok(());
-            }
-        }
-    }
-
-    Err(BertError::ParentNotFound(parent.to_string()))
-}
-
-/// Find the next available sibling number for a parent task
+/// Find the next available sibling number under `parent`, validating that the
+/// parent exists.
+///
+/// Returns the next number using the parent's on-disk spelling, so children
+/// reuse the directory's own padding (e.g. parent file `task-033.md` → child
+/// `033.1`).
 ///
 /// Examples:
 /// - Parent "03" with existing children 03.1, 03.2 -> returns "03.3"
 /// - Parent "03.1" with existing children 03.1.1, 03.1.2 -> returns "03.1.3"
-fn find_next_sibling(config: &BertConfig, parent: &str) -> Result<String> {
-    let entries = fs::read_dir(&config.tasks_directory)?;
-    // Normalize parent number (e.g., "1" -> "01")
-    let normalized = normalize_task_number(parent);
-    let pattern = format!("task-{}.", normalized);
+/// - Bare-format dirs work too: parent "033" with no children -> "033.1"
+fn find_next_sibling_under_parent(config: &BertConfig, parent: &str) -> Result<String> {
+    let mut canonical: Option<String> = None;
     let mut max_sibling = 0;
 
-    for entry in entries.flatten() {
-        if let Some(filename) = entry.file_name().to_str() {
-            if filename.starts_with(&pattern) {
-                // Extract the sibling number after parent
-                // e.g., "task-03.2-foo.md" -> extract "2"
-                if let Some(rest) = filename.strip_prefix(&pattern) {
-                    if let Some(num_part) = rest.split('-').next() {
-                        // Handle nested tasks: "1.2" should extract "1"
-                        if let Some(first_num) = num_part.split('.').next() {
-                            if let Ok(num) = first_num.parse::<u32>() {
-                                max_sibling = max_sibling.max(num);
-                            }
-                        }
-                    }
+    for entry in fs::read_dir(&config.tasks_directory)?.flatten() {
+        let Some(filename) = entry.file_name().into_string().ok() else {
+            continue;
+        };
+        let Some(parsed) = format::parse_task_filename(&filename) else {
+            continue;
+        };
+
+        // The parent may appear after its children in read_dir order, so keep
+        // scanning for it even after children have been seen.
+        if canonical.is_none() && format::number_matches(&parsed.number, parent) {
+            canonical = Some(parsed.number.clone());
+        }
+
+        if format::number_is_descendant(&parsed.number, parent) {
+            // The segment directly below the parent decides the sibling slot
+            if let Some(next_seg) = parsed.number.split('.').nth(parent.split('.').count()) {
+                if let Ok(num) = next_seg.parse::<u32>() {
+                    max_sibling = max_sibling.max(num);
                 }
             }
         }
     }
 
-    let next_sibling = max_sibling + 1;
-    Ok(format!("{}.{}", normalized, next_sibling))
+    let canonical_parent = canonical.ok_or_else(|| BertError::ParentNotFound(parent.to_string()))?;
+
+    Ok(format!("{}.{}", canonical_parent, max_sibling + 1))
 }
 
-/// Generate task file content with frontmatter and minimal template
-fn generate_task_template(task_number: &str, description: &str) -> String {
-    let today = Local::now().format("%Y-%m-%d");
+/// Generate task file content following the detected profile
+fn generate_task_template(profile: &FormatProfile, task_number: &str, description: &str) -> String {
+    let frontmatter = format::render_frontmatter(profile, task_number, description);
+
+    let h1 = if profile.h1_lowercase {
+        format!("# task-{}: {}", task_number, description)
+    } else {
+        let trimmed = task_number.trim_start_matches('0');
+        let num = if trimmed.is_empty() { "0" } else { trimmed };
+        format!("# Task {}: {}", num, description)
+    };
 
     format!(
-        r#"---
-status: pending
-created: {date}
-updated: {date}
----
-
-# Task {number}: {title}
+        r#"{frontmatter}{h1}
 
 ## Context
 
 <!-- Describe what needs to be done and why -->
 "#,
-        date = today,
-        number = task_number,
-        title = description
+        frontmatter = frontmatter,
+        h1 = h1,
     )
 }
 
@@ -177,82 +176,91 @@ mod tests {
 
     #[test]
     fn test_generate_slug_simple() {
-        assert_eq!(generate_slug("Hello World"), "hello-world");
+        assert_eq!(generate_task_slug("Hello World"), "hello-world");
     }
 
     #[test]
     fn test_generate_slug_with_special_chars() {
         assert_eq!(
-            generate_slug("Fix bug #123 (urgent!)"),
+            generate_task_slug("Fix bug #123 (urgent!)"),
             "fix-bug-123-urgent"
         );
     }
 
     #[test]
     fn test_generate_slug_multiple_spaces() {
-        assert_eq!(generate_slug("  Multiple   Spaces  "), "multiple-spaces");
+        assert_eq!(generate_task_slug("  Multiple   Spaces  "), "multiple-spaces");
     }
 
     #[test]
     fn test_generate_slug_underscores() {
-        assert_eq!(generate_slug("task_with_underscores"), "task-with-underscores");
+        assert_eq!(generate_task_slug("task_with_underscores"), "task-with-underscores");
     }
 
     #[test]
     fn test_generate_slug_max_length() {
         let long_desc = "This is a very long description that exceeds the fifty character limit";
-        let slug = generate_slug(long_desc);
+        let slug = generate_task_slug(long_desc);
         assert!(slug.len() <= 50);
         assert!(!slug.ends_with('-'));
     }
 
     #[test]
     fn test_generate_slug_collapses_hyphens() {
-        assert_eq!(generate_slug("hello----world"), "hello-world");
+        assert_eq!(generate_task_slug("hello----world"), "hello-world");
     }
 
     #[test]
     fn test_generate_slug_removes_leading_trailing_hyphens() {
-        assert_eq!(generate_slug("-hello-world-"), "hello-world");
+        assert_eq!(generate_task_slug("-hello-world-"), "hello-world");
     }
 
     #[test]
-    fn test_generate_template() {
-        let content = generate_task_template("08", "Test Task");
-        assert!(content.contains("status: pending"));
-        assert!(content.contains("# Task 08: Test Task"));
+    fn test_generate_template_default_profile() {
+        let profile = FormatProfile::default();
+        let content = generate_task_template(&profile, "08", "Test Task");
+        assert!(content.contains("status: stub"));
+        assert!(content.contains("# Task 8: Test Task"));
         assert!(content.contains("## Context"));
+        assert!(content.starts_with("---\n"));
+    }
+
+    #[test]
+    fn test_generate_template_wobase_style_profile() {
+        let profile = FormatProfile {
+            use_slug: false,
+            h1_lowercase: true,
+            todo_status_word: "open".to_string(),
+            frontmatter_keys: vec![
+                ("id".to_string(), format::FieldKind::Scalar),
+                ("title".to_string(), format::FieldKind::Scalar),
+                ("status".to_string(), format::FieldKind::Scalar),
+                ("priority".to_string(), format::FieldKind::Scalar),
+                ("tags".to_string(), format::FieldKind::List),
+            ],
+            ..Default::default()
+        };
+        let content = generate_task_template(&profile, "034", "Wire it up");
+        assert!(content.contains("id: task-034"));
+        assert!(content.contains("title: \"Wire it up\""));
+        assert!(content.contains("status: open"));
+        assert!(content.contains("priority: \"\""));
+        assert!(content.contains("tags: []"));
+        assert!(content.contains("# task-034: Wire it up"));
     }
 
     #[test]
     fn test_find_next_sibling_first_child() {
         use tempfile::TempDir;
         let temp_dir = TempDir::new().unwrap();
-        let config = crate::models::config::BertConfig {
-            project_root: temp_dir.path().to_path_buf(),
-            bert_root: temp_dir.path().join("bert"),
-            tasks_directory: temp_dir.path().join("tasks"),
-            notes_directory: Some(temp_dir.path().join("notes")),
-            archive_tasks_directory: Some(temp_dir.path().join("archive/tasks")),
-            archive_notes_directory: Some(temp_dir.path().join("archive/notes")),
-            specs_directory: temp_dir.path().join("specs"),
-            archive_specs_directory: Some(temp_dir.path().join("archive/specs")),
-            archive_directory: Some(temp_dir.path().join("archive")),
-            product_directory: Some(temp_dir.path().join("product")),
-            prompt_logs: Some(temp_dir.path().join("prompt-logs")),
-            library_directory: Some(temp_dir.path().join("library")),
-            sets_directory: Some(temp_dir.path().join("sets")),
-            tui: crate::models::config::TuiConfig {
-                pane_widths: Some(crate::models::config::PaneWidths::default()),
-            },
-        };
+        let config = crate::models::config::test_support::test_config(temp_dir.path());
 
         // Create tasks directory and parent task
         fs::create_dir_all(&config.tasks_directory).unwrap();
         fs::write(config.tasks_directory.join("task-03-parent.md"), "").unwrap();
 
         // First child should be 03.1
-        let next = find_next_sibling(&config, "03").unwrap();
+        let next = find_next_sibling_under_parent(&config, "03").unwrap();
         assert_eq!(next, "03.1");
     }
 
@@ -260,31 +268,14 @@ mod tests {
     fn test_find_next_sibling_with_existing() {
         use tempfile::TempDir;
         let temp_dir = TempDir::new().unwrap();
-        let config = crate::models::config::BertConfig {
-            project_root: temp_dir.path().to_path_buf(),
-            bert_root: temp_dir.path().join("bert"),
-            tasks_directory: temp_dir.path().join("tasks"),
-            notes_directory: Some(temp_dir.path().join("notes")),
-            archive_tasks_directory: Some(temp_dir.path().join("archive/tasks")),
-            archive_notes_directory: Some(temp_dir.path().join("archive/notes")),
-            specs_directory: temp_dir.path().join("specs"),
-            archive_specs_directory: Some(temp_dir.path().join("archive/specs")),
-            archive_directory: Some(temp_dir.path().join("archive")),
-            product_directory: Some(temp_dir.path().join("product")),
-            prompt_logs: Some(temp_dir.path().join("prompt-logs")),
-            library_directory: Some(temp_dir.path().join("library")),
-            sets_directory: Some(temp_dir.path().join("sets")),
-            tui: crate::models::config::TuiConfig {
-                pane_widths: Some(crate::models::config::PaneWidths::default()),
-            },
-        };
+        let config = crate::models::config::test_support::test_config(temp_dir.path());
 
         fs::create_dir_all(&config.tasks_directory).unwrap();
         fs::write(config.tasks_directory.join("task-03-parent.md"), "").unwrap();
         fs::write(config.tasks_directory.join("task-03.1-child1.md"), "").unwrap();
         fs::write(config.tasks_directory.join("task-03.2-child2.md"), "").unwrap();
 
-        let next = find_next_sibling(&config, "03").unwrap();
+        let next = find_next_sibling_under_parent(&config, "03").unwrap();
         assert_eq!(next, "03.3");
     }
 
@@ -292,30 +283,13 @@ mod tests {
     fn test_find_next_sibling_nested() {
         use tempfile::TempDir;
         let temp_dir = TempDir::new().unwrap();
-        let config = crate::models::config::BertConfig {
-            project_root: temp_dir.path().to_path_buf(),
-            bert_root: temp_dir.path().join("bert"),
-            tasks_directory: temp_dir.path().join("tasks"),
-            notes_directory: Some(temp_dir.path().join("notes")),
-            archive_tasks_directory: Some(temp_dir.path().join("archive/tasks")),
-            archive_notes_directory: Some(temp_dir.path().join("archive/notes")),
-            specs_directory: temp_dir.path().join("specs"),
-            archive_specs_directory: Some(temp_dir.path().join("archive/specs")),
-            archive_directory: Some(temp_dir.path().join("archive")),
-            product_directory: Some(temp_dir.path().join("product")),
-            prompt_logs: Some(temp_dir.path().join("prompt-logs")),
-            library_directory: Some(temp_dir.path().join("library")),
-            sets_directory: Some(temp_dir.path().join("sets")),
-            tui: crate::models::config::TuiConfig {
-                pane_widths: Some(crate::models::config::PaneWidths::default()),
-            },
-        };
+        let config = crate::models::config::test_support::test_config(temp_dir.path());
 
         fs::create_dir_all(&config.tasks_directory).unwrap();
         fs::write(config.tasks_directory.join("task-03.1-child.md"), "").unwrap();
         fs::write(config.tasks_directory.join("task-03.1.1-grandchild.md"), "").unwrap();
 
-        let next = find_next_sibling(&config, "03.1").unwrap();
+        let next = find_next_sibling_under_parent(&config, "03.1").unwrap();
         assert_eq!(next, "03.1.2");
     }
 
@@ -323,57 +297,23 @@ mod tests {
     fn test_validate_parent_exists_success() {
         use tempfile::TempDir;
         let temp_dir = TempDir::new().unwrap();
-        let config = crate::models::config::BertConfig {
-            project_root: temp_dir.path().to_path_buf(),
-            bert_root: temp_dir.path().join("bert"),
-            tasks_directory: temp_dir.path().join("tasks"),
-            notes_directory: Some(temp_dir.path().join("notes")),
-            archive_tasks_directory: Some(temp_dir.path().join("archive/tasks")),
-            archive_notes_directory: Some(temp_dir.path().join("archive/notes")),
-            specs_directory: temp_dir.path().join("specs"),
-            archive_specs_directory: Some(temp_dir.path().join("archive/specs")),
-            archive_directory: Some(temp_dir.path().join("archive")),
-            product_directory: Some(temp_dir.path().join("product")),
-            prompt_logs: Some(temp_dir.path().join("prompt-logs")),
-            library_directory: Some(temp_dir.path().join("library")),
-            sets_directory: Some(temp_dir.path().join("sets")),
-            tui: crate::models::config::TuiConfig {
-                pane_widths: Some(crate::models::config::PaneWidths::default()),
-            },
-        };
+        let config = crate::models::config::test_support::test_config(temp_dir.path());
 
         fs::create_dir_all(&config.tasks_directory).unwrap();
         fs::write(config.tasks_directory.join("task-03-parent.md"), "").unwrap();
 
-        assert!(validate_parent_exists(&config, "03").is_ok());
+        assert!(find_next_sibling_under_parent(&config, "03").is_ok());
     }
 
     #[test]
     fn test_validate_parent_exists_failure() {
         use tempfile::TempDir;
         let temp_dir = TempDir::new().unwrap();
-        let config = crate::models::config::BertConfig {
-            project_root: temp_dir.path().to_path_buf(),
-            bert_root: temp_dir.path().join("bert"),
-            tasks_directory: temp_dir.path().join("tasks"),
-            notes_directory: Some(temp_dir.path().join("notes")),
-            archive_tasks_directory: Some(temp_dir.path().join("archive/tasks")),
-            archive_notes_directory: Some(temp_dir.path().join("archive/notes")),
-            specs_directory: temp_dir.path().join("specs"),
-            archive_specs_directory: Some(temp_dir.path().join("archive/specs")),
-            archive_directory: Some(temp_dir.path().join("archive")),
-            product_directory: Some(temp_dir.path().join("product")),
-            prompt_logs: Some(temp_dir.path().join("prompt-logs")),
-            library_directory: Some(temp_dir.path().join("library")),
-            sets_directory: Some(temp_dir.path().join("sets")),
-            tui: crate::models::config::TuiConfig {
-                pane_widths: Some(crate::models::config::PaneWidths::default()),
-            },
-        };
+        let config = crate::models::config::test_support::test_config(temp_dir.path());
 
         fs::create_dir_all(&config.tasks_directory).unwrap();
 
-        let result = validate_parent_exists(&config, "03");
+        let result = find_next_sibling_under_parent(&config, "03");
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), BertError::ParentNotFound(_)));
     }

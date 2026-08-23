@@ -36,7 +36,7 @@ pub fn create_prompt_stub(config: &BertConfig, description: &str, verbose: bool)
     let prompt_number = find_next_prompt_number(prompt_logs_dir)?;
 
     // Generate short slug from description
-    let slug = generate_slug(description);
+    let slug = generate_prompt_slug(description);
 
     // Get today's date
     let today = Local::now().format("%Y-%m-%d");
@@ -57,7 +57,7 @@ pub fn create_prompt_stub(config: &BertConfig, description: &str, verbose: bool)
     let (content, template_used) = generate_prompt_log_template(config, &prompt_number, description, verbose)?;
     fs::write(&filepath, content)?;
 
-    Ok((prompt_number.clone(), filepath.display().to_string(), template_used))
+    Ok((prompt_number, filepath.display().to_string(), template_used))
 }
 
 /// Find the next available prompt number for today
@@ -73,9 +73,15 @@ fn find_next_prompt_number(prompt_logs_dir: &std::path::Path) -> Result<String> 
 
     let mut max_num = 0;
 
-    if prompt_logs_dir.exists() {
-        let entries = fs::read_dir(prompt_logs_dir)?;
+    // A missing logs directory is not an error (the first prompt starts at
+    // 001); other read failures still propagate.
+    let entries = match fs::read_dir(prompt_logs_dir) {
+        Ok(entries) => Some(entries),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => return Err(e.into()),
+    };
 
+    if let Some(entries) = entries {
         for entry in entries.flatten() {
             if let Some(filename) = entry.file_name().to_str() {
                 if let Some(captures) = pattern.captures(filename) {
@@ -94,7 +100,7 @@ fn find_next_prompt_number(prompt_logs_dir: &std::path::Path) -> Result<String> 
 }
 
 /// Generate a slug from description (lowercase, alphanumeric, max 20 chars)
-fn generate_slug(description: &str) -> String {
+fn generate_prompt_slug(description: &str) -> String {
     let slug: String = description
         .to_lowercase()
         .chars()
@@ -187,37 +193,20 @@ mod tests {
 
     #[test]
     fn test_generate_slug() {
-        assert_eq!(generate_slug("System Creation"), "system-creation");
-        assert_eq!(generate_slug("API v2.0 Design"), "api-v2-0-design");
-        assert_eq!(generate_slug("Test  Multiple   Spaces"), "test-multiple-spaces");
+        assert_eq!(generate_prompt_slug("System Creation"), "system-creation");
+        assert_eq!(generate_prompt_slug("API v2.0 Design"), "api-v2-0-design");
+        assert_eq!(generate_prompt_slug("Test  Multiple   Spaces"), "test-multiple-spaces");
 
         // Test truncation
         let long_desc = "This is a very long description that exceeds the maximum length";
-        let slug = generate_slug(long_desc);
+        let slug = generate_prompt_slug(long_desc);
         assert!(slug.len() <= 20);
     }
 
     #[test]
     fn test_generate_prompt_log_template() {
         let temp_dir = TempDir::new().unwrap();
-        let config = BertConfig {
-            project_root: temp_dir.path().to_path_buf(),
-            bert_root: temp_dir.path().join("bert"),
-            tasks_directory: temp_dir.path().join("tasks"),
-            notes_directory: Some(temp_dir.path().join("notes")),
-            archive_tasks_directory: Some(temp_dir.path().join("archive/tasks")),
-            archive_notes_directory: Some(temp_dir.path().join("archive/notes")),
-            specs_directory: temp_dir.path().join("specs"),
-            archive_specs_directory: Some(temp_dir.path().join("archive/specs")),
-            archive_directory: Some(temp_dir.path().join("archive")),
-            product_directory: Some(temp_dir.path().join("product")),
-            prompt_logs: Some(temp_dir.path().join("prompt-logs")),
-            library_directory: Some(temp_dir.path().join("library")),
-            sets_directory: Some(temp_dir.path().join("sets")),
-            tui: crate::models::config::TuiConfig {
-                pane_widths: Some(crate::models::config::PaneWidths::default()),
-            },
-        };
+        let config = crate::models::config::test_support::test_config(temp_dir.path());
 
         let (content, template_used) = generate_prompt_log_template(&config, "001", "Test Prompt", false).unwrap();
         assert!(content.contains("prompt_number: 001"));
@@ -250,24 +239,7 @@ mod tests {
     #[test]
     fn test_create_prompt_stub() {
         let temp_dir = TempDir::new().unwrap();
-        let config = BertConfig {
-            project_root: temp_dir.path().to_path_buf(),
-            bert_root: temp_dir.path().join("bert"),
-            tasks_directory: temp_dir.path().join("tasks"),
-            notes_directory: Some(temp_dir.path().join("notes")),
-            archive_tasks_directory: Some(temp_dir.path().join("archive/tasks")),
-            archive_notes_directory: Some(temp_dir.path().join("archive/notes")),
-            specs_directory: temp_dir.path().join("specs"),
-            archive_specs_directory: Some(temp_dir.path().join("archive/specs")),
-            archive_directory: Some(temp_dir.path().join("archive")),
-            product_directory: Some(temp_dir.path().join("product")),
-            prompt_logs: Some(temp_dir.path().join("prompt-logs")),
-            library_directory: Some(temp_dir.path().join("library")),
-            sets_directory: Some(temp_dir.path().join("sets")),
-            tui: crate::models::config::TuiConfig {
-                pane_widths: Some(crate::models::config::PaneWidths::default()),
-            },
-        };
+        let config = crate::models::config::test_support::test_config(temp_dir.path());
 
         let (number, filepath, template_used) = create_prompt_stub(&config, "Test prompt", false).unwrap();
 
@@ -283,24 +255,8 @@ mod tests {
     #[test]
     fn test_create_prompt_stub_no_config() {
         let temp_dir = TempDir::new().unwrap();
-        let config = BertConfig {
-            project_root: temp_dir.path().to_path_buf(),
-            bert_root: temp_dir.path().join("bert"),
-            tasks_directory: temp_dir.path().join("tasks"),
-            notes_directory: Some(temp_dir.path().join("notes")),
-            archive_tasks_directory: Some(temp_dir.path().join("archive/tasks")),
-            archive_notes_directory: Some(temp_dir.path().join("archive/notes")),
-            specs_directory: temp_dir.path().join("specs"),
-            archive_specs_directory: Some(temp_dir.path().join("archive/specs")),
-            archive_directory: Some(temp_dir.path().join("archive")),
-            product_directory: Some(temp_dir.path().join("product")),
-            prompt_logs: None,
-            library_directory: Some(temp_dir.path().join("library")),
-            sets_directory: Some(temp_dir.path().join("sets")),
-            tui: crate::models::config::TuiConfig {
-                pane_widths: Some(crate::models::config::PaneWidths::default()),
-            },
-        };
+        let mut config = crate::models::config::test_support::test_config(temp_dir.path());
+        config.prompt_logs = None;
 
         let result = create_prompt_stub(&config, "Test prompt", false);
         assert!(result.is_err());
@@ -311,24 +267,7 @@ mod tests {
     fn test_generate_prompt_log_template_with_custom_template() {
         let temp_dir = TempDir::new().unwrap();
         let bert_root = temp_dir.path().join("bert");
-        let config = BertConfig {
-            project_root: temp_dir.path().to_path_buf(),
-            bert_root: bert_root.clone(),
-            tasks_directory: temp_dir.path().join("tasks"),
-            notes_directory: Some(temp_dir.path().join("notes")),
-            archive_tasks_directory: Some(temp_dir.path().join("archive/tasks")),
-            archive_notes_directory: Some(temp_dir.path().join("archive/notes")),
-            specs_directory: temp_dir.path().join("specs"),
-            archive_specs_directory: Some(temp_dir.path().join("archive/specs")),
-            archive_directory: Some(temp_dir.path().join("archive")),
-            product_directory: Some(temp_dir.path().join("product")),
-            prompt_logs: Some(temp_dir.path().join("prompt-logs")),
-            library_directory: Some(temp_dir.path().join("library")),
-            sets_directory: Some(temp_dir.path().join("sets")),
-            tui: crate::models::config::TuiConfig {
-                pane_widths: Some(crate::models::config::PaneWidths::default()),
-            },
-        };
+        let config = crate::models::config::test_support::test_config(temp_dir.path());
 
         // Create custom template in bert_root
         let template_dir = bert_root.join("config/templates");

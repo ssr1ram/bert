@@ -9,12 +9,13 @@ mod settings;
 mod terminal;
 mod events;
 mod state;
+mod tree_scan;
 mod ui;
 
 use crate::models::config::BertConfig;
 use crate::errors::Result;
 
-pub fn launch(config: &BertConfig, command: Option<&str>) -> Result<()> {
+pub fn launch(config: &BertConfig) -> Result<()> {
     // Initialize terminal
     let mut terminal = terminal::init()?;
 
@@ -26,7 +27,7 @@ pub fn launch(config: &BertConfig, command: Option<&str>) -> Result<()> {
     }));
 
     // Create app state
-    let mut app = app::App::new(config.clone(), command.map(String::from))?;
+    let mut app = app::App::new(config.clone())?;
 
     // Run app loop
     let result = app.run(&mut terminal);
