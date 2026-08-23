@@ -6,3 +6,6 @@ docs/bert
 
 /target
 x-*
+
+# macOS junk
+.DS_Store
