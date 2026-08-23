@@ -5,13 +5,14 @@ use std::process;
 mod commands;
 mod config;
 mod errors;
+mod format;
 mod models;
 mod numbering;
 mod project;
 mod tui;
 mod utils;
 
-use commands::{prompt_stub, spec_archive, spec_stub, task_archive, task_stub, setdir};
+use commands::{adopt, list, prompt_stub, spec_archive, spec_stub, task_archive, task_stub, setdir};
 use config::load_config;
 use errors::BertError;
 
@@ -21,9 +22,13 @@ use errors::BertError;
 #[command(version)]
 #[command(about = "Rust CLI for Bert task management system", long_about = None)]
 struct Cli {
-    /// Override BERT project directory
-    #[arg(long, global = true)]
-    bert_dir: Option<std::path::PathBuf>,
+    /// Override the repository root (default: discovered via git from cwd)
+    #[arg(long = "reporoot", global = true, value_name = "DIR", visible_alias = "repodir", alias = "repo-root", alias = "bert-dir")]
+    repo_root: Option<std::path::PathBuf>,
+
+    /// Override the tasks directory (default: <repo_root>/docs/tasks)
+    #[arg(long = "taskdir", global = true, value_name = "DIR", visible_alias = "task-dir", alias = "tasks-dir")]
+    task_dir: Option<std::path::PathBuf>,
 
     #[command(subcommand)]
     command: Commands,
@@ -62,11 +67,21 @@ enum Commands {
 enum TaskOperations {
     /// Create a new task stub
     ///
+    /// Creates a minimal task file in the tasks directory (zero-config
+    /// default: `<repo_root>/docs/tasks`). The number continues the
+    /// directory's existing sequence, and the filename shape, padding,
+    /// frontmatter keys and status word mimic what the directory already
+    /// uses — bare `task-034.md` in a bare directory, `task-034-slug.md`
+    /// in a slugged one.
+    ///
+    /// With --parent, the new file becomes the next child of that task
+    /// (e.g. parent 3 -> task-03.1, then 03.2, ...). The parent must exist.
+    ///
     /// Examples:
     ///   bert task stub "implement user authentication"
     ///   bert task stub -p 3 "add validation logic"
     Stub {
-        /// Task description
+        /// Task description (used for the title and, in slugged dirs, the filename)
         description: String,
 
         /// Parent task number (e.g., "03" or "03.1")
@@ -76,16 +91,73 @@ enum TaskOperations {
 
     /// Archive a task and its notes
     ///
+    /// Moves the task file out of the tasks directory into the archive,
+    /// keeping its filename. If a matching notes file exists, it moves too.
+    /// Nothing is deleted.
+    ///
+    /// "Notes" are companion markdown files named `note-{NUMBER}-*.md` living
+    /// in the notes directory (e.g. `docs/notes/note-08-findings.md`); they
+    /// are optional and only archived when present.
+    ///
+    /// Destinations (zero-config defaults):
+    ///   docs/tasks/task-08-*.md  ->  docs/archive/tasks/
+    ///   docs/notes/note-08-*.md  ->  docs/archive/notes/
+    ///
+    /// Paths follow your configuration: `.bert/config.yml` (or legacy
+    /// `skills.yml`) can relocate them, and `--tasks-dir` overrides the source.
+    /// Run `bert debug` anywhere to print the resolved directories.
+    ///
     /// Examples:
-    ///   bert task archive 08
-    ///   bert task archive 08.1
+    ///   bert task archive 08              # single task (any padding: 7 == 007)
+    ///   bert task archive 08.1            # a subtask
+    ///   bert task archive 08 --recursive  # also archive 08.* children + their notes
     Archive {
-        /// Task number to archive
+        /// Task number to archive (padding-insensitive: "7" matches task-07/task-007 files)
         task_number: String,
 
         /// Recursively archive all child tasks
         #[arg(short, long)]
         recursive: bool,
+    },
+
+    /// Adopt an existing tasks directory's conventions
+    ///
+    /// Scans the tasks directory, detects its filename/frontmatter format,
+    /// and persists it as a `format:` section in `.bert/config.yml`.
+    ///
+    /// Example:
+    ///   bert task adopt
+    Adopt {},
+
+    /// List tasks with optional filtering
+    ///
+    /// Status filters accept canonical words (todo, doing, done, blocked,
+    /// parked) or the directory's own vocabulary (open, paused, deferred...).
+    ///
+    /// Examples:
+    ///   bert task list
+    ///   bert task list --status parked --track newsletter
+    ///   bert task list --priority p1 --json
+    List {
+        /// Filter by status (canonical or raw vocabulary)
+        #[arg(short, long)]
+        status: Option<String>,
+
+        /// Filter by track value
+        #[arg(long)]
+        track: Option<String>,
+
+        /// Filter by priority value
+        #[arg(long)]
+        priority: Option<String>,
+
+        /// Filter by tag
+        #[arg(long)]
+        tag: Option<String>,
+
+        /// Output machine-readable JSON
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -135,23 +207,41 @@ fn main() {
     let result = match cli.command {
         Commands::Task { operation } => match operation {
             TaskOperations::Stub { description, parent } => {
-                handle_task_stub(cli.bert_dir, &description, parent.as_deref())
+                handle_task_stub(cli.repo_root, cli.task_dir, &description, parent.as_deref())
             }
             TaskOperations::Archive {
                 task_number,
                 recursive,
-            } => handle_task_archive(cli.bert_dir, &task_number, recursive),
+            } => handle_task_archive(cli.repo_root, cli.task_dir, &task_number, recursive),
+            TaskOperations::Adopt {} => handle_task_adopt(cli.repo_root),
+            TaskOperations::List {
+                status,
+                track,
+                priority,
+                tag,
+                json,
+            } => handle_task_list(
+                cli.repo_root,
+                cli.task_dir,
+                list::ListFilter {
+                    status,
+                    track,
+                    priority,
+                    tag,
+                },
+                json,
+            ),
         },
         Commands::Spec { operation } => match operation {
-            SpecOperations::Stub { description } => handle_spec_stub(cli.bert_dir, &description),
-            SpecOperations::Archive { spec_number } => handle_spec_archive(cli.bert_dir, &spec_number),
+            SpecOperations::Stub { description } => handle_spec_stub(cli.repo_root, cli.task_dir, &description),
+            SpecOperations::Archive { spec_number } => handle_spec_archive(cli.repo_root, cli.task_dir, &spec_number),
         },
         Commands::Prompt { operation } => match operation {
-            PromptOperations::Stub { description, verbose } => handle_prompt_stub(cli.bert_dir, &description, verbose),
+            PromptOperations::Stub { description, verbose } => handle_prompt_stub(cli.repo_root, cli.task_dir, &description, verbose),
         },
-        Commands::Tui { command } => handle_tui(cli.bert_dir, command.as_deref()),
-        Commands::Debug => handle_debug(cli.bert_dir),
-        Commands::Setdir => handle_setdir(cli.bert_dir),
+        Commands::Tui { command } => handle_tui(cli.repo_root, cli.task_dir, command.as_deref()),
+        Commands::Debug => handle_debug(cli.repo_root, cli.task_dir),
+        Commands::Setdir => handle_setdir(cli.repo_root),
     };
 
     if let Err(err) = result {
@@ -160,8 +250,8 @@ fn main() {
     }
 }
 
-fn handle_task_stub(bert_dir: Option<std::path::PathBuf>, description: &str, parent: Option<&str>) -> Result<(), BertError> {
-    let config = load_config(bert_dir)?;
+fn handle_task_stub(repo_root: Option<std::path::PathBuf>, task_dir: Option<std::path::PathBuf>, description: &str, parent: Option<&str>) -> Result<(), BertError> {
+    let config = load_config(repo_root, task_dir)?;
 
     let (task_number, filepath) = task_stub::create_task_stub(&config, description, parent)?;
 
@@ -170,8 +260,8 @@ fn handle_task_stub(bert_dir: Option<std::path::PathBuf>, description: &str, par
     Ok(())
 }
 
-fn handle_task_archive(bert_dir: Option<std::path::PathBuf>, task_number: &str, recursive: bool) -> Result<(), BertError> {
-    let config = load_config(bert_dir)?;
+fn handle_task_archive(repo_root: Option<std::path::PathBuf>, task_dir: Option<std::path::PathBuf>, task_number: &str, recursive: bool) -> Result<(), BertError> {
+    let config = load_config(repo_root, task_dir)?;
 
     let archived_count = task_archive::archive_task(&config, task_number, recursive)?;
 
@@ -187,8 +277,30 @@ fn handle_task_archive(bert_dir: Option<std::path::PathBuf>, task_number: &str, 
     Ok(())
 }
 
-fn handle_spec_stub(bert_dir: Option<std::path::PathBuf>, description: &str) -> Result<(), BertError> {
-    let config = load_config(bert_dir)?;
+fn handle_task_adopt(repo_root: Option<std::path::PathBuf>) -> Result<(), BertError> {
+    let config = load_config(repo_root, None)?;
+
+    let summary = adopt::adopt(&config)?;
+    println!("✓ {}", summary);
+
+    Ok(())
+}
+
+fn handle_task_list(
+    repo_root: Option<std::path::PathBuf>,
+    task_dir: Option<std::path::PathBuf>,
+    filter: list::ListFilter,
+    json: bool,
+) -> Result<(), BertError> {
+    let config = load_config(repo_root, task_dir)?;
+
+    list::list_tasks(&config, &filter, json)?;
+
+    Ok(())
+}
+
+fn handle_spec_stub(repo_root: Option<std::path::PathBuf>, task_dir: Option<std::path::PathBuf>, description: &str) -> Result<(), BertError> {
+    let config = load_config(repo_root, task_dir)?;
 
     let (spec_number, dirpath) = spec_stub::create_spec_stub(&config, description)?;
 
@@ -197,8 +309,8 @@ fn handle_spec_stub(bert_dir: Option<std::path::PathBuf>, description: &str) -> 
     Ok(())
 }
 
-fn handle_spec_archive(bert_dir: Option<std::path::PathBuf>, spec_number: &str) -> Result<(), BertError> {
-    let config = load_config(bert_dir)?;
+fn handle_spec_archive(repo_root: Option<std::path::PathBuf>, task_dir: Option<std::path::PathBuf>, spec_number: &str) -> Result<(), BertError> {
+    let config = load_config(repo_root, task_dir)?;
 
     let archived_count = spec_archive::archive_spec(&config, spec_number)?;
 
@@ -210,8 +322,8 @@ fn handle_spec_archive(bert_dir: Option<std::path::PathBuf>, spec_number: &str) 
     Ok(())
 }
 
-fn handle_prompt_stub(bert_dir: Option<std::path::PathBuf>, description: &str, verbose: bool) -> Result<(), BertError> {
-    let config = load_config(bert_dir)?;
+fn handle_prompt_stub(repo_root: Option<std::path::PathBuf>, task_dir: Option<std::path::PathBuf>, description: &str, verbose: bool) -> Result<(), BertError> {
+    let config = load_config(repo_root, task_dir)?;
 
     if verbose {
         eprintln!("[verbose] Loaded config:");
@@ -230,17 +342,17 @@ fn handle_prompt_stub(bert_dir: Option<std::path::PathBuf>, description: &str, v
     Ok(())
 }
 
-fn handle_tui(bert_dir: Option<std::path::PathBuf>, command: Option<&str>) -> Result<(), BertError> {
-    let config = load_config(bert_dir)?;
+fn handle_tui(repo_root: Option<std::path::PathBuf>, task_dir: Option<std::path::PathBuf>, _command: Option<&str>) -> Result<(), BertError> {
+    let config = load_config(repo_root, task_dir)?;
 
     // Single line - TUI is completely isolated
-    tui::launch(&config, command)?;
+    tui::launch(&config)?;
 
     Ok(())
 }
 
-fn handle_debug(bert_dir: Option<std::path::PathBuf>) -> Result<(), BertError> {
-    let config = load_config(bert_dir)?;
+fn handle_debug(repo_root: Option<std::path::PathBuf>, task_dir: Option<std::path::PathBuf>) -> Result<(), BertError> {
+    let config = load_config(repo_root, task_dir)?;
 
     println!("BERT Configuration Debug");
     println!("========================\n");
@@ -290,11 +402,31 @@ fn handle_debug(bert_dir: Option<std::path::PathBuf>) -> Result<(), BertError> {
         println!("  Logs:     (not configured)");
     }
 
+    // Show the effective write-format (explicit config > mimicry > defaults)
+    let profile = format::apply_overrides(
+        format::detect_profile(&config.tasks_directory),
+        config.format.as_ref(),
+    );
+    println!("\nTask Format (effective):");
+    println!("  slug: {}", profile.use_slug);
+    println!("  padding: {}", profile.number_width);
+    println!("  h1_lowercase: {}", profile.h1_lowercase);
+    println!("  todo_status_word: \"{}\"", profile.todo_status_word);
+    println!(
+        "  frontmatter: [{}]",
+        profile
+            .frontmatter_keys
+            .iter()
+            .map(|(k, _)| k.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+
     Ok(())
 }
 
-fn handle_setdir(bert_dir: Option<std::path::PathBuf>) -> Result<(), BertError> {
-    let target_dir = match bert_dir {
+fn handle_setdir(repo_root: Option<std::path::PathBuf>) -> Result<(), BertError> {
+    let target_dir = match repo_root {
         Some(path) => path,
         None => std::env::current_dir().map_err(|e| BertError::ConfigError(e.to_string()))?,
     };

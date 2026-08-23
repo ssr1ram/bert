@@ -19,28 +19,30 @@ use std::path::Path;
 /// use bert_cli::numbering::find_next_number;
 /// use bert_cli::config::load_config;
 ///
-/// let config = load_config(None)?;
+/// let config = load_config(None, None)?;
 /// let next = find_next_number(&config)?;
 /// println!("Next number: {}", next); // e.g., "09"
 /// # Ok::<(), bert_cli::errors::BertError>(())
 /// ```
 pub fn find_next_number(config: &BertConfig) -> Result<String> {
     let mut max_num = 0;
+    // Mimic the directory's number width (e.g. bare 3-digit task-033.md files).
+    let mut max_width = 2usize;
 
-    // Regex patterns (compiled once for performance)
-    let task_pattern = Regex::new(r"^task-(\d+)-.*\.md$").unwrap();
     // Spec pattern matches both "spec-08" and "spec-08-slug"
     let spec_pattern = Regex::new(r"^spec-(\d+)").unwrap();
 
     // Scan active tasks
-    if let Some(max) = scan_tasks_directory(&config.tasks_directory, &task_pattern) {
+    if let Some((max, width)) = scan_tasks_directory(&config.tasks_directory) {
         max_num = max_num.max(max);
+        max_width = max_width.max(width);
     }
 
     // Scan archived tasks
     if let Some(ref archive_dir) = config.archive_tasks_directory {
-        if let Some(max) = scan_tasks_directory(archive_dir, &task_pattern) {
+        if let Some((max, width)) = scan_tasks_directory(archive_dir) {
             max_num = max_num.max(max);
+            max_width = max_width.max(width);
         }
     }
 
@@ -56,42 +58,36 @@ pub fn find_next_number(config: &BertConfig) -> Result<String> {
         }
     }
 
-    // Next number is max + 1, with 2-digit padding
+    // Next number is max + 1, padded to the directory's observed width
     let next_num = max_num + 1;
-    Ok(format!("{:02}", next_num))
+    Ok(format!("{:0w$}", next_num, w = max_width))
 }
 
-/// Scan a tasks directory for task files matching the pattern
+/// Scan a tasks directory for task files of any convention
 ///
-/// Returns the highest task number found, or None if directory doesn't exist
-/// or no valid tasks are found.
-fn scan_tasks_directory(dir: &Path, pattern: &Regex) -> Option<u32> {
-    if !dir.exists() {
-        return None;
-    }
-
+/// Returns `(highest_number, widest_digit_width)`, or None if the directory
+/// doesn't exist or no valid tasks are found.
+fn scan_tasks_directory(dir: &Path) -> Option<(u32, usize)> {
     let entries = fs::read_dir(dir).ok()?;
     let mut max_num = 0;
+    let mut max_width = 2;
     let mut found_any = false;
 
     for entry in entries.flatten() {
         if let Some(filename) = entry.file_name().to_str() {
-            if let Some(captures) = pattern.captures(filename) {
-                if let Some(num_str) = captures.get(1) {
-                    if let Ok(num) = num_str.as_str().parse::<u32>() {
-                        max_num = max_num.max(num);
-                        found_any = true;
+            if let Some(parsed) = crate::format::parse_task_filename(filename) {
+                if let Ok(num) = parsed.number.parse::<u32>() {
+                    max_num = max_num.max(num);
+                    if !parsed.number.contains('.') {
+                        max_width = max_width.max(parsed.number.len());
                     }
+                    found_any = true;
                 }
             }
         }
     }
 
-    if found_any {
-        Some(max_num)
-    } else {
-        None
-    }
+    found_any.then_some((max_num, max_width))
 }
 
 /// Scan a specs directory for spec directories matching the pattern
@@ -99,10 +95,6 @@ fn scan_tasks_directory(dir: &Path, pattern: &Regex) -> Option<u32> {
 /// Returns the highest spec number found, or None if directory doesn't exist
 /// or no valid specs are found.
 fn scan_specs_directory(dir: &Path, pattern: &Regex) -> Option<u32> {
-    if !dir.exists() {
-        return None;
-    }
-
     let entries = fs::read_dir(dir).ok()?;
     let mut max_num = 0;
     let mut found_any = false;
@@ -132,36 +124,14 @@ fn scan_specs_directory(dir: &Path, pattern: &Regex) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::config::BertConfig;
+    use crate::models::config::test_support::test_config;
     use std::fs;
     use tempfile::TempDir;
-
-    fn create_test_config(temp_dir: &TempDir) -> BertConfig {
-        let root = temp_dir.path();
-        BertConfig {
-            project_root: root.to_path_buf(),
-            bert_root: root.join("bert"),
-            tasks_directory: root.join("tasks"),
-            notes_directory: Some(root.join("notes")),
-            archive_tasks_directory: Some(root.join("archive/tasks")),
-            archive_notes_directory: Some(root.join("archive/notes")),
-            specs_directory: root.join("specs"),
-            archive_specs_directory: Some(root.join("archive/specs")),
-            archive_directory: Some(root.join("archive")),
-            product_directory: Some(root.join("product")),
-            prompt_logs: Some(root.join("prompt-logs")),
-            library_directory: Some(root.join("library")),
-            sets_directory: Some(root.join("sets")),
-            tui: crate::models::config::TuiConfig {
-                pane_widths: Some(crate::models::config::PaneWidths::default()),
-            },
-        }
-    }
 
     #[test]
     fn test_find_next_number_empty() {
         let temp_dir = TempDir::new().unwrap();
-        let config = create_test_config(&temp_dir);
+        let config = test_config(temp_dir.path());
 
         // Create empty directories
         fs::create_dir_all(&config.tasks_directory).unwrap();
@@ -174,7 +144,7 @@ mod tests {
     #[test]
     fn test_find_next_number_with_tasks() {
         let temp_dir = TempDir::new().unwrap();
-        let config = create_test_config(&temp_dir);
+        let config = test_config(temp_dir.path());
 
         // Create tasks directory with some tasks
         fs::create_dir_all(&config.tasks_directory).unwrap();
@@ -189,7 +159,7 @@ mod tests {
     #[test]
     fn test_find_next_number_ignores_subtasks() {
         let temp_dir = TempDir::new().unwrap();
-        let config = create_test_config(&temp_dir);
+        let config = test_config(temp_dir.path());
 
         // Create tasks with subtasks
         fs::create_dir_all(&config.tasks_directory).unwrap();
@@ -204,7 +174,7 @@ mod tests {
     #[test]
     fn test_find_next_number_with_specs() {
         let temp_dir = TempDir::new().unwrap();
-        let config = create_test_config(&temp_dir);
+        let config = test_config(temp_dir.path());
 
         // Create specs directories
         fs::create_dir_all(&config.specs_directory).unwrap();
@@ -218,7 +188,7 @@ mod tests {
     #[test]
     fn test_find_next_number_with_tasks_and_specs() {
         let temp_dir = TempDir::new().unwrap();
-        let config = create_test_config(&temp_dir);
+        let config = test_config(temp_dir.path());
 
         // Create both tasks and specs
         fs::create_dir_all(&config.tasks_directory).unwrap();
@@ -234,7 +204,7 @@ mod tests {
     #[test]
     fn test_find_next_number_with_archived() {
         let temp_dir = TempDir::new().unwrap();
-        let config = create_test_config(&temp_dir);
+        let config = test_config(temp_dir.path());
 
         // Create active and archived tasks/specs
         fs::create_dir_all(&config.tasks_directory).unwrap();
@@ -260,7 +230,7 @@ mod tests {
     #[test]
     fn test_find_next_number_nonexistent_directories() {
         let temp_dir = TempDir::new().unwrap();
-        let config = create_test_config(&temp_dir);
+        let config = test_config(temp_dir.path());
 
         // Don't create any directories
         let next = find_next_number(&config).unwrap();
@@ -270,7 +240,7 @@ mod tests {
     #[test]
     fn test_find_next_number_with_padding() {
         let temp_dir = TempDir::new().unwrap();
-        let config = create_test_config(&temp_dir);
+        let config = test_config(temp_dir.path());
 
         fs::create_dir_all(&config.tasks_directory).unwrap();
         fs::write(config.tasks_directory.join("task-01-foo.md"), "").unwrap();
@@ -282,7 +252,7 @@ mod tests {
     #[test]
     fn test_find_next_number_with_spec_slugs() {
         let temp_dir = TempDir::new().unwrap();
-        let config = create_test_config(&temp_dir);
+        let config = test_config(temp_dir.path());
 
         // Create specs with slugs (new format)
         fs::create_dir_all(&config.specs_directory).unwrap();
@@ -297,7 +267,7 @@ mod tests {
     #[test]
     fn test_find_next_number_with_mixed_spec_formats() {
         let temp_dir = TempDir::new().unwrap();
-        let config = create_test_config(&temp_dir);
+        let config = test_config(temp_dir.path());
 
         // Mix of old format (spec-08) and new format (spec-12-slug)
         fs::create_dir_all(&config.specs_directory).unwrap();

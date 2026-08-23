@@ -2,18 +2,53 @@
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
-/// Main skill.yml configuration structure
+/// Per-file format conventions, typically written by `bert task adopt` as a
+/// top-level `format:` section. Every field is optional; anything absent
+/// keeps the detected or bert-native default.
+#[derive(Debug, Deserialize, Clone, Default)]
+pub struct FileFormatConfig {
+    /// Emit `task-NN-slug.md` (true) or bare `task-NNN.md` (false)
+    #[serde(default)]
+    pub slug: Option<bool>,
+
+    /// Zero-padding width for task numbers (minimum 2 on apply)
+    #[serde(default)]
+    pub padding: Option<usize>,
+
+    /// H1 style: `# task-01-slug` (true) vs `# Task 01: Slug` (false)
+    #[serde(default)]
+    pub h1_lowercase: Option<bool>,
+
+    /// The directory's word for a fresh task's status
+    #[serde(default)]
+    pub todo_status_word: Option<String>,
+
+    /// Frontmatter keys to emit on new stubs, in order
+    #[serde(default)]
+    pub frontmatter: Option<Vec<String>>,
+}
+
+/// Main skill.yml / `.bert/config.yml` structure.
+///
+/// Both sections are optional: a file with only a `format:` section is valid,
+/// and a missing `config:` section selects the self-contained default layout.
 #[derive(Debug, Deserialize, Clone)]
 pub struct SkillConfig {
-    /// Configuration section
-    pub config: DirectoryConfig,
+    /// Configuration section (directory overrides)
+    #[serde(default)]
+    pub config: Option<DirectoryConfig>,
+
+    /// File format conventions
+    #[serde(default)]
+    pub format: Option<FileFormatConfig>,
 }
 
 /// Directory configuration from skill.yml
 #[derive(Debug, Deserialize, Clone)]
 pub struct DirectoryConfig {
-    /// Bert root directory (required - defines the base for all BERT directories)
-    /// When only bert_root is specified, all other paths use the default layout:
+    /// Bert root directory (required when a config section is present - defines
+    /// the base for all BERT directories). When only bert_root is specified,
+    /// all other paths use the default layout:
     /// {bert_root}/tasks, {bert_root}/specs, {bert_root}/prompts/library, etc.
     pub bert_root: String,
 
@@ -148,85 +183,153 @@ pub struct BertConfig {
     /// Prompt sets directory (absolute path, optional)
     #[allow(dead_code)]
     pub sets_directory: Option<PathBuf>,
+
     /// TUI configuration
     pub tui: TuiConfig,
+
+    /// File format conventions (explicit config beats directory mimicry)
+    pub format: Option<FileFormatConfig>,
 }
 
 impl BertConfig {
     /// Create BertConfig from SkillConfig by resolving relative paths
     ///
-    /// If bert_root is specified but individual directories are not, the default
-    /// directory layout is used (defined in models::defaults::BertDirectoryLayout).
+    /// With a `config:` section, relative paths resolve against the project
+    /// root and unspecified directories use the classic layout under
+    /// `bert_root` (defined in models::defaults::BertDirectoryLayout).
+    ///
+    /// Without one, everything nests self-contained under `<root>/docs/tasks`.
     pub fn from_skill_config(skill_config: SkillConfig, project_root: &Path) -> Self {
         use super::defaults::BertDirectoryLayout;
+        use crate::config::DEFAULT_BERT_ROOT;
 
-        let config = skill_config.config;
+        // Self-contained zero-config layout: everything lives inside the
+        // tasks directory itself, keeping the docs/ namespace clean.
+        let Some(config) = skill_config.config else {
+            let docs = project_root.join(DEFAULT_BERT_ROOT);
+            let tasks = docs.join("tasks");
+            return BertConfig {
+                project_root: project_root.to_path_buf(),
+                bert_root: docs,
+                tasks_directory: tasks.clone(),
+                notes_directory: Some(tasks.join("notes")),
+                archive_tasks_directory: Some(tasks.join("archive")),
+                archive_notes_directory: Some(tasks.join("archive/notes")),
+                archive_specs_directory: Some(tasks.join("archive/specs")),
+                specs_directory: tasks.join("specs"),
+                archive_directory: Some(tasks.join("archive")),
+                product_directory: Some(tasks.join("product")),
+                prompt_logs: Some(tasks.join("prompts/logs")),
+                library_directory: Some(tasks.join("prompts/library")),
+                sets_directory: Some(tasks.join("prompts/sets")),
+                tui: TuiConfig {
+                    pane_widths: Some(PaneWidths::default()),
+                },
+                format: skill_config.format,
+            };
+        };
 
         // Resolve bert_root to absolute path
         let bert_root_abs = project_root.join(&config.bert_root);
+        let bert_root_rel = PathBuf::from(&config.bert_root);
+
+        // Resolve an optional override against the project root, falling back
+        // to the layout default relative to bert_root.
+        let resolve_opt = |override_path: &Option<String>, layout_default: fn(&Path) -> PathBuf| {
+            Some(
+                override_path
+                    .as_deref()
+                    .map(|p| project_root.join(p))
+                    .unwrap_or_else(|| project_root.join(layout_default(&bert_root_rel))),
+            )
+        };
+        // Same as `resolve_opt` for required (non-Option) paths.
+        let resolve_req = |override_path: Option<&String>, layout_default: fn(&Path) -> PathBuf| {
+            override_path
+                .map(|p| project_root.join(p))
+                .unwrap_or_else(|| project_root.join(layout_default(&bert_root_rel)))
+        };
 
         BertConfig {
             project_root: project_root.to_path_buf(),
             bert_root: bert_root_abs.clone(),
 
-            // Use provided path or default to {bert_root}/tasks
-            tasks_directory: config.tasks_directory
-                .map(|p| project_root.join(p))
-                .unwrap_or_else(|| project_root.join(BertDirectoryLayout::tasks_dir(&PathBuf::from(&config.bert_root)))),
-
-            // Use provided path or default to {bert_root}/notes
-            notes_directory: config.notes_directory
-                .map(|p| project_root.join(p))
-                .or_else(|| Some(project_root.join(BertDirectoryLayout::notes_dir(&PathBuf::from(&config.bert_root))))),
-
-            // Use provided path or default to {bert_root}/archive/tasks
-            archive_tasks_directory: config.archive_tasks_directory
-                .map(|p| project_root.join(p))
-                .or_else(|| Some(project_root.join(BertDirectoryLayout::archive_tasks_dir(&PathBuf::from(&config.bert_root))))),
-
-            // Use provided path or default to {bert_root}/archive/notes
-            archive_notes_directory: config.archive_notes_directory
-                .map(|p| project_root.join(p))
-                .or_else(|| Some(project_root.join(BertDirectoryLayout::archive_notes_dir(&PathBuf::from(&config.bert_root))))),
-
-            // Use provided path or default to {bert_root}/specs
-            specs_directory: config.specs_directory
-                .map(|p| project_root.join(p))
-                .unwrap_or_else(|| project_root.join(BertDirectoryLayout::specs_dir(&PathBuf::from(&config.bert_root)))),
-
-            // Use provided path or default to {bert_root}/archive/specs
-            archive_specs_directory: config.archive_specs_directory
-                .map(|p| project_root.join(p))
-                .or_else(|| Some(project_root.join(BertDirectoryLayout::archive_specs_dir(&PathBuf::from(&config.bert_root))))),
-
-            // Use provided path or default to {bert_root}/archive
-            archive_directory: config.archive_directory
-                .map(|p| project_root.join(p))
-                .or_else(|| Some(project_root.join(BertDirectoryLayout::archive_dir(&PathBuf::from(&config.bert_root))))),
-
-            // Use provided path or default to {bert_root}/product
-            product_directory: config.product_directory
-                .map(|p| project_root.join(p))
-                .or_else(|| Some(project_root.join(BertDirectoryLayout::product_dir(&PathBuf::from(&config.bert_root))))),
-
-            // Use provided path or default to {bert_root}/prompts/logs
-            prompt_logs: config.prompt_logs
-                .map(|p| project_root.join(p))
-                .or_else(|| Some(project_root.join(BertDirectoryLayout::prompt_logs_dir(&PathBuf::from(&config.bert_root))))),
-
-            // Use provided path or default to {bert_root}/prompts/library
-            library_directory: config.library_directory
-                .map(|p| project_root.join(p))
-                .or_else(|| Some(project_root.join(BertDirectoryLayout::prompts_library_dir(&PathBuf::from(&config.bert_root))))),
-
-            // Use provided path or default to {bert_root}/prompts/sets
-            sets_directory: config.sets_directory
-                .map(|p| project_root.join(p))
-                .or_else(|| Some(project_root.join(BertDirectoryLayout::prompts_sets_dir(&PathBuf::from(&config.bert_root))))),
+            tasks_directory: resolve_req(
+                config.tasks_directory.as_ref(),
+                BertDirectoryLayout::tasks_dir,
+            ),
+            notes_directory: resolve_opt(
+                &config.notes_directory,
+                BertDirectoryLayout::notes_dir,
+            ),
+            archive_tasks_directory: resolve_opt(
+                &config.archive_tasks_directory,
+                BertDirectoryLayout::archive_tasks_dir,
+            ),
+            archive_notes_directory: resolve_opt(
+                &config.archive_notes_directory,
+                BertDirectoryLayout::archive_notes_dir,
+            ),
+            specs_directory: resolve_req(
+                config.specs_directory.as_ref(),
+                BertDirectoryLayout::specs_dir,
+            ),
+            archive_specs_directory: resolve_opt(
+                &config.archive_specs_directory,
+                BertDirectoryLayout::archive_specs_dir,
+            ),
+            archive_directory: resolve_opt(
+                &config.archive_directory,
+                BertDirectoryLayout::archive_dir,
+            ),
+            product_directory: resolve_opt(
+                &config.product_directory,
+                BertDirectoryLayout::product_dir,
+            ),
+            prompt_logs: resolve_opt(&config.prompt_logs, BertDirectoryLayout::prompt_logs_dir),
+            library_directory: resolve_opt(
+                &config.library_directory,
+                BertDirectoryLayout::prompts_library_dir,
+            ),
+            sets_directory: resolve_opt(
+                &config.sets_directory,
+                BertDirectoryLayout::prompts_sets_dir,
+            ),
 
             tui: config.tui.unwrap_or_else(|| TuiConfig {
                 pane_widths: Some(PaneWidths::default()),
             }),
+            format: skill_config.format,
+        }
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod test_support {
+    use super::*;
+    use std::path::Path;
+
+    /// Fully-populated `BertConfig` rooted at `root`, for tests.
+    /// Tests override the individual fields they vary.
+    pub(crate) fn test_config(root: &Path) -> BertConfig {
+        BertConfig {
+            project_root: root.to_path_buf(),
+            bert_root: root.join("bert"),
+            tasks_directory: root.join("tasks"),
+            notes_directory: Some(root.join("notes")),
+            archive_tasks_directory: Some(root.join("archive/tasks")),
+            archive_notes_directory: Some(root.join("archive/notes")),
+            specs_directory: root.join("specs"),
+            archive_specs_directory: Some(root.join("archive/specs")),
+            archive_directory: Some(root.join("archive")),
+            product_directory: Some(root.join("product")),
+            prompt_logs: Some(root.join("prompt-logs")),
+            library_directory: Some(root.join("library")),
+            sets_directory: Some(root.join("sets")),
+            tui: TuiConfig {
+                pane_widths: Some(PaneWidths::default()),
+            },
+            format: None,
         }
     }
 }
@@ -243,35 +346,12 @@ config:
 "#;
 
         let skill_config: SkillConfig = serde_yaml::from_str(yaml).unwrap();
-        assert_eq!(skill_config.config.bert_root, "docs/bert");
-        assert!(skill_config.config.tasks_directory.is_none());
-        assert!(skill_config.config.specs_directory.is_none());
-        assert!(skill_config.config.notes_directory.is_none());
+        assert_eq!(skill_config.config.as_ref().unwrap().bert_root, "docs/bert");
+        assert!(skill_config.format.is_none());
     }
 
     #[test]
-    fn test_deserialize_full_config() {
-        let yaml = r#"
-config:
-  bert_root: docs/bert
-  tasks_directory: docs/bert/tasks
-  notes_directory: docs/bert/notes
-  archive_tasks_directory: docs/bert/archive/tasks
-  archive_notes_directory: docs/bert/archive/notes
-  specs_directory: docs/bert/specs
-  archive_specs_directory: docs/bert/archive/specs
-  product_directory: docs/bert/product
-"#;
-
-        let skill_config: SkillConfig = serde_yaml::from_str(yaml).unwrap();
-        assert_eq!(skill_config.config.bert_root, "docs/bert");
-        assert_eq!(skill_config.config.tasks_directory, Some("docs/bert/tasks".to_string()));
-        assert_eq!(skill_config.config.notes_directory, Some("docs/bert/notes".to_string()));
-        assert_eq!(skill_config.config.specs_directory, Some("docs/bert/specs".to_string()));
-    }
-
-    #[test]
-    fn test_resolve_paths() {
+    fn test_resolve_paths_classic_layout() {
         let yaml = r#"
 config:
   bert_root: docs/bert
@@ -288,5 +368,29 @@ config:
         assert_eq!(bert_config.notes_directory, Some(PathBuf::from("/project/root/docs/bert/notes")));
         assert_eq!(bert_config.library_directory, Some(PathBuf::from("/project/root/docs/bert/prompts/library")));
         assert_eq!(bert_config.sets_directory, Some(PathBuf::from("/project/root/docs/bert/prompts/sets")));
+        assert!(bert_config.format.is_none());
+    }
+
+    #[test]
+    fn test_zero_config_nests_under_tasks() {
+        let skill_config: SkillConfig = serde_yaml::from_str("format:\n  slug: false\n").unwrap();
+        assert!(skill_config.config.is_none());
+
+        let bert_config = BertConfig::from_skill_config(skill_config, Path::new("/proj"));
+
+        assert_eq!(bert_config.tasks_directory, PathBuf::from("/proj/docs/tasks"));
+        assert_eq!(
+            bert_config.notes_directory,
+            Some(PathBuf::from("/proj/docs/tasks/notes"))
+        );
+        assert_eq!(
+            bert_config.archive_tasks_directory,
+            Some(PathBuf::from("/proj/docs/tasks/archive"))
+        );
+        assert_eq!(
+            bert_config.specs_directory,
+            PathBuf::from("/proj/docs/tasks/specs")
+        );
+        assert_eq!(bert_config.format.as_ref().unwrap().slug, Some(false));
     }
 }

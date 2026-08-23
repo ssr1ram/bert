@@ -1,14 +1,9 @@
 // Error types for bert CLI
-use std::path::PathBuf;
 use thiserror::Error;
 
 /// Main error type for bert CLI operations
 #[derive(Error, Debug)]
 pub enum BertError {
-    /// Project root not found (no skill.yml)
-    #[error("Not in a bert project. Could not find .claude/skills/bert/skill.yml in current directory or any parent directory.\nCurrent directory: {0}")]
-    ProjectNotFound(PathBuf),
-
     /// Configuration file errors
     #[error("Configuration error: {0}")]
     ConfigError(String),
@@ -24,10 +19,6 @@ pub enum BertError {
     /// Invalid input from user
     #[error("Invalid input: {0}")]
     InvalidInput(String),
-
-    /// YAML parsing error
-    #[error("YAML parsing error: {0}")]
-    YamlError(#[from] serde_yaml::Error),
 
     /// IO errors
     #[error("IO error: {0}")]
@@ -51,9 +42,6 @@ pub type Result<T> = std::result::Result<T, BertError>;
 
 /// Exit codes for the CLI
 pub mod exit_codes {
-    /// Project not found
-    pub const PROJECT_NOT_FOUND: i32 = 1;
-
     /// Configuration error
     pub const CONFIG_ERROR: i32 = 2;
 
@@ -71,8 +59,7 @@ impl BertError {
     /// Convert error to appropriate exit code
     pub fn exit_code(&self) -> i32 {
         match self {
-            BertError::ProjectNotFound(_) => exit_codes::PROJECT_NOT_FOUND,
-            BertError::ConfigError(_) | BertError::YamlError(_) => exit_codes::CONFIG_ERROR,
+            BertError::ConfigError(_) => exit_codes::CONFIG_ERROR,
             BertError::TaskNotFound(_) | BertError::ParentNotFound(_) | BertError::NotFound(_) => {
                 exit_codes::TASK_NOT_FOUND
             }
@@ -87,15 +74,6 @@ impl BertError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
-
-    #[test]
-    fn test_project_not_found_error() {
-        let path = PathBuf::from("/some/path");
-        let error = BertError::ProjectNotFound(path.clone());
-        assert!(error.to_string().contains("/some/path"));
-        assert_eq!(error.exit_code(), exit_codes::PROJECT_NOT_FOUND);
-    }
 
     #[test]
     fn test_config_error() {
