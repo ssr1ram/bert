@@ -12,7 +12,7 @@ mod project;
 mod tui;
 mod utils;
 
-use commands::{adopt, list, prompt_stub, spec_archive, spec_stub, task_archive, task_stub, setdir};
+use commands::{adopt, list, prompt_stub, spec_archive, spec_stub, task_archive, task_done, task_readme, task_stub, setdir};
 use config::load_config;
 use errors::BertError;
 
@@ -87,6 +87,12 @@ enum TaskOperations {
         /// Parent task number (e.g., "03" or "03.1")
         #[arg(short, long)]
         parent: Option<String>,
+
+        /// Also create/update the tasks-directory README.md index: creates
+        /// it (with this task included) if missing, or appends a row to its
+        /// active-tasks table if it already exists
+        #[arg(long)]
+        readme: bool,
     },
 
     /// Archive a task and its notes
@@ -118,6 +124,47 @@ enum TaskOperations {
         /// Recursively archive all child tasks
         #[arg(short, long)]
         recursive: bool,
+    },
+
+    /// Mark a task done: flip its status, archive it, and sync the README
+    ///
+    /// Combines three steps that used to be manual:
+    ///   1. Set the task's frontmatter `status:` to the directory's "done"
+    ///      word (whatever raw word in this directory normalizes to done —
+    ///      "done", "completed", "closed", ...; defaults to "done").
+    ///   2. Archive the task (same move as `bert task archive`).
+    ///   3. If the tasks directory has a `README.md`, drop the task's active
+    ///      links from it and append a row to its "Completed" table. This
+    ///      step is best-effort: it only touches lines it can identify with
+    ///      confidence, and is skipped entirely when no README.md exists.
+    ///
+    /// Examples:
+    ///   bert task done 09
+    ///   bert task done 08 --recursive
+    Done {
+        /// Task number to mark done (padding-insensitive: "7" matches task-07/task-007 files)
+        task_number: String,
+
+        /// Also mark and archive all child tasks
+        #[arg(short, long)]
+        recursive: bool,
+    },
+
+    /// Create or regenerate the tasks-directory README.md index
+    ///
+    /// Scans active tasks (and, if configured, the archive directory for
+    /// completed ones) and writes an active-tasks table plus a completed
+    /// table. Opt-in and never automatic: refuses to touch an existing
+    /// README.md unless --force is given, since regenerating overwrites any
+    /// hand-written content in it.
+    ///
+    /// Examples:
+    ///   bert task readme            # create it if missing
+    ///   bert task readme --force    # regenerate from current tasks
+    Readme {
+        /// Overwrite an existing README.md, regenerating it from current tasks
+        #[arg(short, long)]
+        force: bool,
     },
 
     /// Adopt an existing tasks directory's conventions
@@ -206,13 +253,18 @@ fn main() {
 
     let result = match cli.command {
         Commands::Task { operation } => match operation {
-            TaskOperations::Stub { description, parent } => {
-                handle_task_stub(cli.repo_root, cli.task_dir, &description, parent.as_deref())
+            TaskOperations::Stub { description, parent, readme } => {
+                handle_task_stub(cli.repo_root, cli.task_dir, &description, parent.as_deref(), readme)
             }
             TaskOperations::Archive {
                 task_number,
                 recursive,
             } => handle_task_archive(cli.repo_root, cli.task_dir, &task_number, recursive),
+            TaskOperations::Done {
+                task_number,
+                recursive,
+            } => handle_task_done(cli.repo_root, cli.task_dir, &task_number, recursive),
+            TaskOperations::Readme { force } => handle_task_readme(cli.repo_root, cli.task_dir, force),
             TaskOperations::Adopt {} => handle_task_adopt(cli.repo_root),
             TaskOperations::List {
                 status,
@@ -250,12 +302,32 @@ fn main() {
     }
 }
 
-fn handle_task_stub(repo_root: Option<std::path::PathBuf>, task_dir: Option<std::path::PathBuf>, description: &str, parent: Option<&str>) -> Result<(), BertError> {
+fn handle_task_stub(repo_root: Option<std::path::PathBuf>, task_dir: Option<std::path::PathBuf>, description: &str, parent: Option<&str>, readme: bool) -> Result<(), BertError> {
     let config = load_config(repo_root, task_dir)?;
 
     let (task_number, filepath) = task_stub::create_task_stub(&config, description, parent)?;
 
     println!("✓ Created task {}: {}", task_number, filepath);
+
+    if readme {
+        match task_readme::sync_after_stub(&config, &task_number)? {
+            task_readme::StubReadmeAction::Created => println!("✓ Created README.md"),
+            task_readme::StubReadmeAction::RowAdded => println!("✓ Added task to README.md"),
+            task_readme::StubReadmeAction::NoActiveTable => {
+                println!("⚠ README.md exists but has no active-tasks table to update")
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn handle_task_readme(repo_root: Option<std::path::PathBuf>, task_dir: Option<std::path::PathBuf>, force: bool) -> Result<(), BertError> {
+    let config = load_config(repo_root, task_dir)?;
+
+    let path = task_readme::create_readme(&config, force)?;
+
+    println!("✓ Wrote {}", path.display());
 
     Ok(())
 }
@@ -272,6 +344,31 @@ fn handle_task_archive(repo_root: Option<std::path::PathBuf>, task_dir: Option<s
         );
     } else {
         println!("✓ Archived {} file(s)", archived_count);
+    }
+
+    Ok(())
+}
+
+fn handle_task_done(repo_root: Option<std::path::PathBuf>, task_dir: Option<std::path::PathBuf>, task_number: &str, recursive: bool) -> Result<(), BertError> {
+    let config = load_config(repo_root, task_dir)?;
+
+    let report = task_done::mark_task_done(&config, task_number, recursive)?;
+
+    if recursive {
+        println!(
+            "✓ Marked done and archived {} files (task + children + notes)",
+            report.archived_count
+        );
+    } else {
+        println!("✓ Marked done and archived {} file(s)", report.archived_count);
+    }
+
+    if report.readme_rows_removed > 0 || report.readme_rows_added {
+        println!(
+            "✓ Synced README.md ({} active row(s) removed, completed row(s) {})",
+            report.readme_rows_removed,
+            if report.readme_rows_added { "added" } else { "not added" }
+        );
     }
 
     Ok(())

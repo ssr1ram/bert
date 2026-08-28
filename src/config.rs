@@ -124,8 +124,11 @@ mod tests {
     }
 
     #[test]
-    fn test_legacy_config_section_keeps_bert_root_layout() {
-        // An explicit config: section preserves the classic layout
+    fn test_legacy_config_section_nests_under_tasks() {
+        // An explicit config: section (here, just a custom bert_root) still
+        // nests companion directories under tasks/ by default — matching
+        // the zero-config layout's shape rather than scattering docs/bert/*
+        // siblings the way older bert versions did.
         let temp_dir = TempDir::new().unwrap();
         write_legacy_config(temp_dir.path(), "config:\n  bert_root: docs/bert\n");
 
@@ -136,11 +139,11 @@ mod tests {
         );
         assert_eq!(
             config.archive_tasks_directory,
-            Some(temp_dir.path().join("docs/bert/archive/tasks"))
+            Some(temp_dir.path().join("docs/bert/tasks/archive"))
         );
         assert_eq!(
             config.notes_directory,
-            Some(temp_dir.path().join("docs/bert/notes"))
+            Some(temp_dir.path().join("docs/bert/tasks/notes"))
         );
     }
 

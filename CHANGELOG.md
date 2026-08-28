@@ -2,6 +2,17 @@
 
 All notable changes are documented here.
 
+## [0.4.0] - 2026-08-28
+
+### Added - `task done` and `task readme`
+- `bert task done <N> [--recursive]`: flips a task's frontmatter `status:` to the directory's own "done" word (whatever raw word already normalizes to done — falls back to `"done"`), archives it (same move as `task archive`), and — if the tasks directory has a `README.md` — drops the task's active-section links and appends a row to its "Completed" table. The README sync is best-effort: it only touches lines it can identify with confidence, and is skipped entirely when no `README.md` exists.
+- `bert task readme [--force]`: (re)generates `README.md` from the current task files (active-tasks table + completed table). Opt-in only — refuses to overwrite an existing file without `--force`, since regenerating replaces any hand-written content.
+- `bert task stub --readme`: creates the README (including the new task) if missing, or appends just the new task's row to an existing README's active-tasks table.
+
+### Changed - Directory defaults mimic what's already on disk
+- Zero-config and classic (`config:`-section) layouts both now prefer an existing `<tasks_dir>/done` directory over bert's own `archive/` default for `archive_tasks_directory`, the same way bert already mimics filename/frontmatter conventions from an existing directory. A project that already archives into `done/` no longer needs a `.bert/config.yml` just to keep `task done`/`task archive` from creating a second, competing `archive/` folder.
+- **Breaking (pre-1.0):** the classic layout (`BertDirectoryLayout`, used whenever a `.bert/config.yml` has any `config:` section) now nests every companion directory under `{bert_root}/tasks/` instead of as a sibling of `tasks/` under `bert_root` — matching the zero-config layout's shape exactly. `notes_dir` is now `{bert_root}/tasks/notes` (was `{bert_root}/notes`), `archive_tasks_dir` is now `{bert_root}/tasks/archive` (was `{bert_root}/archive/tasks`), and similarly for specs/product/prompts. Explicit per-field overrides in a config file are unaffected.
+
 ## [0.3.3] - 2026-08-23
 
 ### Fixed

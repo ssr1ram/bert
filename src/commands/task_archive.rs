@@ -92,7 +92,7 @@ fn archive_with_children(config: &BertConfig, task_number: &str) -> Result<usize
 ///
 /// Descendance is transitive, so one pass over the tasks directory
 /// yields every descendant; no per-child rescans needed.
-fn find_all_children(config: &BertConfig, parent_number: &str) -> Result<Vec<String>> {
+pub(crate) fn find_all_children(config: &BertConfig, parent_number: &str) -> Result<Vec<String>> {
     // Resolve the parent's on-disk spelling (handles any padding width)
     let canonical = find_task_file(config, parent_number)
         .ok()

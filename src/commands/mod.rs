@@ -2,6 +2,8 @@ pub mod adopt;
 pub mod list;
 pub mod task_stub;
 pub mod task_archive;
+pub mod task_done;
+pub mod task_readme;
 pub mod spec_stub;
 pub mod spec_archive;
 pub mod prompt_stub;

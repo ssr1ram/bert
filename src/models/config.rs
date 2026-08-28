@@ -191,6 +191,17 @@ pub struct BertConfig {
     pub format: Option<FileFormatConfig>,
 }
 
+/// If `tasks_dir/done` already exists on disk, prefer it as the archive
+/// destination for completed tasks. This mimics an established `done/`
+/// convention the same way bert already mimics filename/frontmatter shape
+/// from an existing directory, so a project that already archives into
+/// `done/` doesn't need a `.bert/config.yml` just to keep `bert task done`
+/// (and `archive`) from creating a second, competing `archive/` folder.
+fn existing_done_dir(tasks_dir: &Path) -> Option<PathBuf> {
+    let done_dir = tasks_dir.join("done");
+    done_dir.is_dir().then_some(done_dir)
+}
+
 impl BertConfig {
     /// Create BertConfig from SkillConfig by resolving relative paths
     ///
@@ -208,12 +219,13 @@ impl BertConfig {
         let Some(config) = skill_config.config else {
             let docs = project_root.join(DEFAULT_BERT_ROOT);
             let tasks = docs.join("tasks");
+            let archive_tasks_directory = existing_done_dir(&tasks).unwrap_or_else(|| tasks.join("archive"));
             return BertConfig {
                 project_root: project_root.to_path_buf(),
                 bert_root: docs,
                 tasks_directory: tasks.clone(),
                 notes_directory: Some(tasks.join("notes")),
-                archive_tasks_directory: Some(tasks.join("archive")),
+                archive_tasks_directory: Some(archive_tasks_directory),
                 archive_notes_directory: Some(tasks.join("archive/notes")),
                 archive_specs_directory: Some(tasks.join("archive/specs")),
                 specs_directory: tasks.join("specs"),
@@ -250,22 +262,30 @@ impl BertConfig {
                 .unwrap_or_else(|| project_root.join(layout_default(&bert_root_rel)))
         };
 
+        let tasks_directory = resolve_req(
+            config.tasks_directory.as_ref(),
+            BertDirectoryLayout::tasks_dir,
+        );
+
+        // An explicit override always wins; otherwise prefer an existing
+        // `done/` subdirectory (same mimicry as the zero-config layout)
+        // before falling back to bert's own `archive/tasks` layout default.
+        let archive_tasks_directory = Some(match config.archive_tasks_directory.as_deref() {
+            Some(p) => project_root.join(p),
+            None => existing_done_dir(&tasks_directory)
+                .unwrap_or_else(|| project_root.join(BertDirectoryLayout::archive_tasks_dir(&bert_root_rel))),
+        });
+
         BertConfig {
             project_root: project_root.to_path_buf(),
             bert_root: bert_root_abs.clone(),
 
-            tasks_directory: resolve_req(
-                config.tasks_directory.as_ref(),
-                BertDirectoryLayout::tasks_dir,
-            ),
+            tasks_directory,
             notes_directory: resolve_opt(
                 &config.notes_directory,
                 BertDirectoryLayout::notes_dir,
             ),
-            archive_tasks_directory: resolve_opt(
-                &config.archive_tasks_directory,
-                BertDirectoryLayout::archive_tasks_dir,
-            ),
+            archive_tasks_directory,
             archive_notes_directory: resolve_opt(
                 &config.archive_notes_directory,
                 BertDirectoryLayout::archive_notes_dir,
@@ -364,10 +384,12 @@ config:
         assert_eq!(bert_config.project_root, PathBuf::from("/project/root"));
         assert_eq!(bert_config.bert_root, PathBuf::from("/project/root/docs/bert"));
         assert_eq!(bert_config.tasks_directory, PathBuf::from("/project/root/docs/bert/tasks"));
-        assert_eq!(bert_config.specs_directory, PathBuf::from("/project/root/docs/bert/specs"));
-        assert_eq!(bert_config.notes_directory, Some(PathBuf::from("/project/root/docs/bert/notes")));
-        assert_eq!(bert_config.library_directory, Some(PathBuf::from("/project/root/docs/bert/prompts/library")));
-        assert_eq!(bert_config.sets_directory, Some(PathBuf::from("/project/root/docs/bert/prompts/sets")));
+        // Companion directories nest under tasks/, not sibling to it —
+        // same shape as the zero-config layout (see existing_done_dir).
+        assert_eq!(bert_config.specs_directory, PathBuf::from("/project/root/docs/bert/tasks/specs"));
+        assert_eq!(bert_config.notes_directory, Some(PathBuf::from("/project/root/docs/bert/tasks/notes")));
+        assert_eq!(bert_config.library_directory, Some(PathBuf::from("/project/root/docs/bert/tasks/prompts/library")));
+        assert_eq!(bert_config.sets_directory, Some(PathBuf::from("/project/root/docs/bert/tasks/prompts/sets")));
         assert!(bert_config.format.is_none());
     }
 
@@ -392,5 +414,64 @@ config:
             PathBuf::from("/proj/docs/tasks/specs")
         );
         assert_eq!(bert_config.format.as_ref().unwrap().slug, Some(false));
+    }
+
+    #[test]
+    fn test_zero_config_prefers_existing_done_dir_over_archive() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir_all(temp_dir.path().join("docs/tasks/done")).unwrap();
+
+        let skill_config = SkillConfig { config: None, format: None };
+        let bert_config = BertConfig::from_skill_config(skill_config, temp_dir.path());
+
+        assert_eq!(
+            bert_config.archive_tasks_directory,
+            Some(temp_dir.path().join("docs/tasks/done"))
+        );
+    }
+
+    #[test]
+    fn test_zero_config_falls_back_to_archive_when_no_done_dir() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+
+        let skill_config = SkillConfig { config: None, format: None };
+        let bert_config = BertConfig::from_skill_config(skill_config, temp_dir.path());
+
+        assert_eq!(
+            bert_config.archive_tasks_directory,
+            Some(temp_dir.path().join("docs/tasks/archive"))
+        );
+    }
+
+    #[test]
+    fn test_configured_layout_prefers_existing_done_dir_when_unset() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir_all(temp_dir.path().join("docs/tasks/done")).unwrap();
+
+        let yaml = "config:\n  bert_root: docs\n";
+        let skill_config: SkillConfig = serde_yaml::from_str(yaml).unwrap();
+        let bert_config = BertConfig::from_skill_config(skill_config, temp_dir.path());
+
+        assert_eq!(bert_config.tasks_directory, temp_dir.path().join("docs/tasks"));
+        assert_eq!(
+            bert_config.archive_tasks_directory,
+            Some(temp_dir.path().join("docs/tasks/done"))
+        );
+    }
+
+    #[test]
+    fn test_configured_layout_explicit_override_wins_over_done_dir() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir_all(temp_dir.path().join("docs/tasks/done")).unwrap();
+        std::fs::create_dir_all(temp_dir.path().join("elsewhere")).unwrap();
+
+        let yaml = "config:\n  bert_root: docs\n  archive_tasks_directory: elsewhere\n";
+        let skill_config: SkillConfig = serde_yaml::from_str(yaml).unwrap();
+        let bert_config = BertConfig::from_skill_config(skill_config, temp_dir.path());
+
+        assert_eq!(
+            bert_config.archive_tasks_directory,
+            Some(temp_dir.path().join("elsewhere"))
+        );
     }
 }

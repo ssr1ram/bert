@@ -106,5 +106,6 @@ fn test_archive_task_integration() {
         .stdout(predicate::str::contains("Archived"));
 
     assert!(!tasks_dir.join("task-01-test.md").exists());
-    assert!(root.join("docs/bert/archive/tasks/task-01-test.md").exists());
+    // Archive nests under tasks/ now, same shape as the zero-config layout.
+    assert!(root.join("docs/bert/tasks/archive/task-01-test.md").exists());
 }

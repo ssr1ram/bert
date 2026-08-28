@@ -566,6 +566,27 @@ pub fn has_tag(entry: &TaskEntry, tag: &str) -> bool {
     entry.tags.iter().any(|t| t.eq_ignore_ascii_case(tag))
 }
 
+/// Does this markdown heading mark a "completed"-style section (e.g.
+/// `## Completed Tasks`)? Shared by `task done` (finds where to append a
+/// completed row) and `task readme` (finds where the active table ends).
+pub(crate) fn is_completed_heading(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    trimmed.starts_with('#') && trimmed.to_lowercase().contains("completed")
+}
+
+/// Relative path from `from_dir` to `to_path`, `/`-separated for markdown
+/// links regardless of platform (both are expected to share a common root,
+/// e.g. both resolved under the same project root).
+pub(crate) fn relative_link(from_dir: &Path, to_path: &Path) -> String {
+    let from: Vec<_> = from_dir.components().collect();
+    let to: Vec<_> = to_path.components().collect();
+    let common = from.iter().zip(to.iter()).take_while(|(a, b)| a == b).count();
+
+    let mut parts: Vec<String> = std::iter::repeat("..".to_string()).take(from.len() - common).collect();
+    parts.extend(to[common..].iter().map(|c| c.as_os_str().to_string_lossy().to_string()));
+    parts.join("/")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -697,6 +718,26 @@ mod tests {
         assert!(status_matches("paused", "parked"));
         assert!(status_matches("deferred", "PARKED"));
         assert!(!status_matches("done", "doing"));
+    }
+
+    #[test]
+    fn test_is_completed_heading() {
+        assert!(is_completed_heading("## Completed Tasks"));
+        assert!(is_completed_heading("### completed"));
+        assert!(!is_completed_heading("## Active Tasks"));
+        assert!(!is_completed_heading("Not a heading with completed in it"));
+    }
+
+    #[test]
+    fn test_relative_link_nested_and_sibling() {
+        assert_eq!(
+            relative_link(Path::new("/proj/docs/tasks"), Path::new("/proj/docs/tasks/done/task-009.md")),
+            "done/task-009.md"
+        );
+        assert_eq!(
+            relative_link(Path::new("/proj/docs/tasks"), Path::new("/proj/docs/archive/tasks/task-009.md")),
+            "../archive/tasks/task-009.md"
+        );
     }
 
     #[test]
